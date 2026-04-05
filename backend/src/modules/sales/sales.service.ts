@@ -158,7 +158,16 @@ export const checkout = async (data: CheckoutInput, userId: string) => {
   // Post-transaction: record cash inflow in the cashier's open register (if any).
   // Intentionally outside the sale transaction — a missing register must not
   // roll back a completed sale.
-  await recordSaleCash(sale, userId);
+  await recordSaleCash({
+    id: sale.id,
+    payments: sale.payments.map((pt) => ({
+      legs: pt.legs.map((l) => ({
+        method: l.method,
+        amount: Number(l.amount),
+        change: Number(l.change),
+      })),
+    })),
+  }, userId);
 
   return sale;
 };
