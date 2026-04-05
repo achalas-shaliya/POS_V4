@@ -1,0 +1,815 @@
+// =============================================================================
+// Prisma Schema — POS System (Mobile Accessories & Repair Shop)
+// Database : MySQL 5.7
+// ORM      : Prisma 7.3.0
+// Generator: prisma-client (Rust-free, ESM-first)
+// =============================================================================
+// NOTE: Database URL is configured in prisma.config.ts (Prisma v7 standard)
+// Run: npx prisma generate   → generates client into src/generated/prisma
+//      npx prisma migrate dev → applies migrations
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client"
+  output        = "../src/generated/prisma"
+  compilerBuild = "fast" // "fast" | "small"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// =============================================================================
+// MODULE: Auth & Users (RBAC)
+// =============================================================================
+
+model User {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  email        String    @unique @db.VarChar(191)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  fullName     String    @map("full_name") @db.VarChar(100)
+  phone        String?   @db.VarChar(20)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  roleId       String    @map("role_id") @db.VarChar(36)
+  role         Role      @relation(fields: [roleId], references: [id])
+
+  refreshTokens        RefreshToken[]
+  stockMovements        StockMovement[]
+  salesAsCashier        Sale[]               @relation("SaleCashier")
+  voidedSales           Sale[]               @relation("SaleVoidedBy")
+  assignedRepairs       RepairJob[]          @relation("RepairTechnician")
+  createdRepairs        RepairJob[]          @relation("RepairCreatedBy")
+  repairStatusLogs      RepairStatusLog[]
+  paymentTransactions   PaymentTransaction[]
+  registersOpened       CashRegister[]       @relation("RegisterOpenedBy")
+  registersClosed       CashRegister[]       @relation("RegisterClosedBy")
+  cashMovements         CashMovement[]       @relation("MovementCreatedBy")
+  transfersRequested    StockTransfer[]      @relation("TransferRequestedBy")
+  transfersDispatched   StockTransfer[]      @relation("TransferDispatchedBy")
+  transfersReceived     StockTransfer[]      @relation("TransferReceivedBy")
+  returnsCreated        SaleReturn[]         @relation("ReturnCreatedBy")
+  returnsProcessed      SaleReturn[]         @relation("ReturnProcessedBy")
+
+  @@index([email])
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(200)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  // Format: "module:action"  e.g. "inventory:read", "sales:create"
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(200)
+  module      String   @db.VarChar(50)   // inventory, sales, repairs, etc.
+  action      String   @db.VarChar(50)   // create, read, update, delete, manage
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  roles       RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+// Join table: Role ↔ Permission (many-to-many)
+model RolePermission {
+  roleId       String     @map("role_id") @db.VarChar(36)
+  permissionId String     @map("permission_id") @db.VarChar(36)
+  assignedAt   DateTime   @default(now()) @map("assigned_at")
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// Refresh token store — allows explicit token revocation
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  token     String   @unique @db.VarChar(512)
+  userId    String   @map("user_id") @db.VarChar(36)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// =============================================================================
+// MODULE: Outlets & Warehouses (shared across Inventory, Sales, Transfers)
+// =============================================================================
+
+model Outlet {
+  id          String       @id @default(uuid()) @db.VarChar(36)
+  name        String       @unique @db.VarChar(100)
+  address     String?      @db.VarChar(255)
+  phone       String?      @db.VarChar(20)
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  outletStocks   OutletStock[]
+  sales          Sale[]
+  repairJobs     RepairJob[]
+  cashRegisters  CashRegister[]
+  saleReturns    SaleReturn[]
+
+  @@map("outlets")
+}
+
+model Warehouse {
+  id              String           @id @default(uuid()) @db.VarChar(36)
+  name            String           @unique @db.VarChar(100)
+  address         String?          @db.VarChar(255)
+  isActive        Boolean          @default(true) @map("is_active")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  warehouseStocks WarehouseStock[]
+
+  @@map("warehouses")
+}
+
+// =============================================================================
+// MODULE: Inventory — Items, Categories, Brands, Stock levels, Movements
+// =============================================================================
+
+model Category {
+  id          String     @id @default(uuid()) @db.VarChar(36)
+  name        String     @unique @db.VarChar(100)
+  description String?    @db.VarChar(255)
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  parentId    String?    @map("parent_id") @db.VarChar(36)
+  parent      Category?  @relation("CategorySub", fields: [parentId], references: [id])
+  children    Category[] @relation("CategorySub")
+  items       Item[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  items       Item[]
+
+  @@map("brands")
+}
+
+enum ItemType {
+  ACCESSORY
+  SPARE_PART
+  TOOL
+}
+
+enum UnitType {
+  PIECE
+  BOX
+  SET
+  PAIR
+}
+
+model Item {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  sku          String   @unique @db.VarChar(50)
+  name         String   @db.VarChar(150)
+  description  String?  @db.Text
+  type         ItemType @default(ACCESSORY)
+  unit         UnitType @default(PIECE)
+  costPrice    Decimal  @map("cost_price") @db.Decimal(12, 2)
+  sellingPrice Decimal  @map("selling_price") @db.Decimal(12, 2)
+  discountPrice  Decimal  @default(0) @map("discount_price") @db.Decimal(10, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  categoryId   String   @map("category_id") @db.VarChar(36)
+  category     Category @relation(fields: [categoryId], references: [id])
+
+  brandId      String?  @map("brand_id") @db.VarChar(36)
+  brand        Brand?   @relation(fields: [brandId], references: [id])
+
+  warehouseStocks WarehouseStock[]
+  outletStocks    OutletStock[]
+  movements       StockMovement[]
+  saleItems       SaleItem[]
+  repairParts     RepairPart[]
+  transferItems   StockTransferItem[]
+  returnItems     SaleReturnItem[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([sku])
+  @@index([isActive, name])
+  @@map("items")
+}
+
+model WarehouseStock {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  quantity    Int       @default(0)
+  minQuantity Int       @default(0) @map("min_quantity")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  warehouseId String    @map("warehouse_id") @db.VarChar(36)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  itemId      String    @map("item_id") @db.VarChar(36)
+  item        Item      @relation(fields: [itemId], references: [id])
+
+  @@unique([warehouseId, itemId])
+  @@index([warehouseId])
+  @@index([itemId])
+  @@map("warehouse_stock")
+}
+
+model OutletStock {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  quantity    Int      @default(0)
+  minQuantity Int      @default(0) @map("min_quantity")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  outletId    String   @map("outlet_id") @db.VarChar(36)
+  outlet      Outlet   @relation(fields: [outletId], references: [id])
+
+  itemId      String   @map("item_id") @db.VarChar(36)
+  item        Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([outletId, itemId])
+  @@index([outletId])
+  @@index([itemId])
+  @@map("outlet_stock")
+}
+
+enum MovementType {
+  PURCHASE    // Stock received from supplier → warehouse
+  TRANSFER    // Between warehouse/outlet
+  SALE        // Deducted from outlet for a customer sale
+  RETURN      // Returned stock coming back
+  ADJUSTMENT  // Manual quantity correction
+}
+
+enum LocationType {
+  WAREHOUSE
+  OUTLET
+}
+
+model StockMovement {
+  id           String        @id @default(uuid()) @db.VarChar(36)
+  movementType MovementType  @map("movement_type")
+  // Always positive; direction determined by from/to presence
+  quantity     Int
+  note         String?       @db.VarChar(500)
+  // Link to a Sale, RepairJob, etc.
+  referenceId  String?       @map("reference_id") @db.VarChar(36)
+
+  itemId       String        @map("item_id") @db.VarChar(36)
+  item         Item          @relation(fields: [itemId], references: [id])
+
+  // null = external (supplier / write-off)
+  fromType     LocationType? @map("from_type")
+  fromId       String?       @map("from_id") @db.VarChar(36)
+
+  toType       LocationType? @map("to_type")
+  toId         String?       @map("to_id") @db.VarChar(36)
+
+  createdBy    String        @map("created_by") @db.VarChar(36)
+  createdByUser User         @relation(fields: [createdBy], references: [id])
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([itemId])
+  @@index([createdBy])
+  @@index([movementType])
+  @@index([createdAt])
+  @@index([itemId, createdAt])
+  @@index([movementType, createdAt])
+  @@map("stock_movements")
+}
+
+// =============================================================================
+// MODULE: Sales (POS)
+// =============================================================================
+
+model Customer {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  name      String   @db.VarChar(100)
+  phone     String   @unique @db.VarChar(20)
+  email     String?  @db.VarChar(191)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sales      Sale[]
+  repairJobs RepairJob[]
+
+  @@index([phone])
+  @@map("customers")
+}
+
+enum SaleStatus {
+  COMPLETED
+  VOIDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+model Sale {
+  id          String     @id @default(uuid()) @db.VarChar(36)
+  receiptNo   String     @unique @map("receipt_no") @db.VarChar(30)
+  status      SaleStatus @default(COMPLETED)
+
+  // Financials — all stored to preserve audit trail even if prices change
+  subtotal    Decimal    @db.Decimal(12, 2)          // sum of line subtotals
+  discountAmt Decimal    @default(0) @map("discount_amt") @db.Decimal(12, 2)
+  total       Decimal    @db.Decimal(12, 2)          // subtotal - discountAmt
+
+  note        String?    @db.VarChar(500)
+
+  // Void metadata
+  voidedAt    DateTime?  @map("voided_at")
+  voidReason  String?    @map("void_reason") @db.VarChar(255)
+
+  outletId    String     @map("outlet_id") @db.VarChar(36)
+  outlet      Outlet     @relation(fields: [outletId], references: [id])
+
+  cashierId   String     @map("cashier_id") @db.VarChar(36)
+  cashier     User       @relation("SaleCashier", fields: [cashierId], references: [id])
+
+  voidedById  String?    @map("voided_by_id") @db.VarChar(36)
+  voidedBy    User?      @relation("SaleVoidedBy", fields: [voidedById], references: [id])
+
+  customerId  String?    @map("customer_id") @db.VarChar(36)
+  customer    Customer?  @relation(fields: [customerId], references: [id])
+
+  items       SaleItem[]
+  payments    PaymentTransaction[]  @relation("SalePayments")
+  returns     SaleReturn[]
+
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@index([outletId])
+  @@index([cashierId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, outletId, createdAt])
+  @@index([outletId, createdAt])
+  @@index([cashierId, createdAt])
+  @@index([customerId, createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(uuid()) @db.VarChar(36)
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)  // locked at time of sale
+  discount  Decimal @default(0) @db.Decimal(12, 2)          // per-unit discount
+  subtotal  Decimal @db.Decimal(12, 2)                       // (unitPrice - discount) * qty
+
+  saleId    String  @map("sale_id") @db.VarChar(36)
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  itemId    String  @map("item_id") @db.VarChar(36)
+  item      Item    @relation(fields: [itemId], references: [id])
+
+  returnItems SaleReturnItem[]
+
+  @@index([saleId])
+  @@index([itemId])
+  @@map("sale_items")
+}
+
+// =============================================================================
+// MODULE: Repair Jobs
+// =============================================================================
+
+enum RepairStatus {
+  PENDING       // Job created, awaiting technician
+  IN_PROGRESS   // Technician actively working
+  DONE          // Repair complete, awaiting customer pickup
+  DELIVERED     // Handed back to customer
+  CANCELLED     // Job cancelled (advance refunded if any)
+}
+
+model RepairJob {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  jobNo         String       @unique @map("job_no") @db.VarChar(30)
+  status        RepairStatus @default(PENDING)
+
+  // Device info
+  deviceBrand   String       @map("device_brand") @db.VarChar(80)
+  deviceModel   String       @map("device_model") @db.VarChar(80)
+  deviceColor   String?      @map("device_color") @db.VarChar(40)
+  serialNo      String?      @map("serial_no") @db.VarChar(100)
+  condition     String?      @db.VarChar(255)   // physical condition on intake
+
+  // Problem & diagnosis
+  problemDesc   String       @map("problem_desc") @db.Text
+  diagnosis     String?      @db.Text
+  internalNote  String?      @map("internal_note") @db.VarChar(500)
+
+  // Financials
+  laborCost     Decimal      @default(0) @map("labor_cost") @db.Decimal(12, 2)
+  advancePaid   Decimal      @default(0) @map("advance_paid") @db.Decimal(12, 2)
+  totalCost     Decimal      @default(0) @map("total_cost") @db.Decimal(12, 2)  // labor + parts; computed on update
+
+  // Dates
+  estimatedDone DateTime?    @map("estimated_done")
+  completedAt   DateTime?    @map("completed_at")
+  deliveredAt   DateTime?    @map("delivered_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  outletId      String       @map("outlet_id") @db.VarChar(36)
+  outlet        Outlet       @relation(fields: [outletId], references: [id])
+
+  customerId    String       @map("customer_id") @db.VarChar(36)
+  customer      Customer     @relation(fields: [customerId], references: [id])
+
+  // Technician may be assigned later
+  technicianId  String?      @map("technician_id") @db.VarChar(36)
+  technician    User?        @relation("RepairTechnician", fields: [technicianId], references: [id])
+
+  createdById   String       @map("created_by_id") @db.VarChar(36)
+  createdBy     User         @relation("RepairCreatedBy", fields: [createdById], references: [id])
+
+  parts         RepairPart[]
+  statusLogs    RepairStatusLog[]
+  payments      PaymentTransaction[]  @relation("RepairPayments")
+
+  @@index([status])
+  @@index([outletId])
+  @@index([customerId])
+  @@index([technicianId])
+  @@index([createdAt])
+  @@index([status, outletId, createdAt])
+  @@index([technicianId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@map("repair_jobs")
+}
+
+// Parts consumed during the repair — deducted from outlet stock
+model RepairPart {
+  id        String  @id @default(uuid()) @db.VarChar(36)
+  quantity  Int
+  unitCost  Decimal @map("unit_cost") @db.Decimal(12, 2)   // cost price locked at time of use
+  subtotal  Decimal @db.Decimal(12, 2)                      // unitCost * qty
+
+  repairId  String  @map("repair_id") @db.VarChar(36)
+  repair    RepairJob @relation(fields: [repairId], references: [id], onDelete: Cascade)
+
+  itemId    String  @map("item_id") @db.VarChar(36)
+  item      Item    @relation(fields: [itemId], references: [id])
+
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  @@index([repairId])
+  @@index([itemId])
+  @@map("repair_parts")
+}
+
+// Immutable status change log — who moved it and when
+model RepairStatusLog {
+  id         String       @id @default(uuid()) @db.VarChar(36)
+  fromStatus RepairStatus? @map("from_status")   // null on initial creation
+  toStatus   RepairStatus @map("to_status")
+  note       String?      @db.VarChar(255)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  repairId   String       @map("repair_id") @db.VarChar(36)
+  repair     RepairJob    @relation(fields: [repairId], references: [id], onDelete: Cascade)
+
+  changedById String      @map("changed_by_id") @db.VarChar(36)
+  changedBy   User        @relation(fields: [changedById], references: [id])
+
+  @@index([repairId])
+  @@map("repair_status_logs")
+}
+
+// =============================================================================
+// MODULE: Payments
+// Unified payment ledger for Sales and Repairs.
+// Every checkout or repair payment creates one PaymentTransaction (the header)
+// plus one or more PaymentLeg rows (one per method — enabling mixed payments).
+// =============================================================================
+
+enum PaymentEntityType {
+  SALE
+  REPAIR
+}
+
+// Header — one record per payment event (checkout, advance, settlement)
+model PaymentTransaction {
+  id          String            @id @default(uuid()) @db.VarChar(36)
+  txNo        String            @unique @map("tx_no") @db.VarChar(30)    // PAY-YYYYMMDD-XXXXXX
+  entityType  PaymentEntityType @map("entity_type")
+  totalAmount Decimal           @map("total_amount") @db.Decimal(12, 2)  // Σ leg amounts
+  totalChange Decimal           @default(0) @map("total_change") @db.Decimal(12, 2)
+  note        String?           @db.VarChar(255)
+
+  // Exactly one of saleId / repairJobId is set
+  saleId      String?           @map("sale_id") @db.VarChar(36)
+  sale        Sale?             @relation("SalePayments", fields: [saleId], references: [id])
+
+  repairJobId String?           @map("repair_job_id") @db.VarChar(36)
+  repairJob   RepairJob?        @relation("RepairPayments", fields: [repairJobId], references: [id])
+
+  legs        PaymentLeg[]
+
+  createdById String            @map("created_by_id") @db.VarChar(36)
+  createdBy   User              @relation(fields: [createdById], references: [id])
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([entityType])
+  @@index([saleId])
+  @@index([repairJobId])
+  @@index([createdAt])
+  @@index([entityType, createdAt])
+  @@index([saleId, createdAt])
+  @@index([repairJobId, createdAt])
+  @@map("payment_transactions")
+}
+
+// One row per payment method within a transaction (enables Cash + Card splits)
+model PaymentLeg {
+  id            String             @id @default(uuid()) @db.VarChar(36)
+  method        PaymentMethod
+  amount        Decimal            @db.Decimal(12, 2)
+  change        Decimal            @default(0) @db.Decimal(12, 2)   // CASH-only
+  reference     String?            @db.VarChar(100)                  // card terminal ref
+
+  transactionId String             @map("transaction_id") @db.VarChar(36)
+  transaction   PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("payment_legs")
+}
+
+// =============================================================================
+// MODULE: Cash Registry
+// Tracks each cashier's register session: opening balance → cash movements
+// (from sales / repairs / manual) → closing with expected vs actual cash.
+// Only one OPEN session per user at a time (enforced at service layer).
+// =============================================================================
+
+enum RegisterStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  SALE_CASH        // Cash leg collected from a Sale
+  REPAIR_CASH      // Cash leg collected from a Repair payment
+  CASH_IN          // Manual cash added (e.g. float top-up, petty cash)
+  CASH_OUT         // Manual cash removed (e.g. bank drop, expense)
+  OPENING_FLOAT    // Initial float recorded when register is opened
+}
+
+// One session per cashier shift
+model CashRegister {
+  id              String         @id @default(uuid()) @db.VarChar(36)
+  status          RegisterStatus @default(OPEN)
+
+  // Opening
+  openingBalance  Decimal        @map("opening_balance") @db.Decimal(12, 2)
+  openedAt        DateTime       @default(now()) @map("opened_at")
+
+  // Closing (null while OPEN)
+  expectedCash    Decimal?       @map("expected_cash") @db.Decimal(12, 2)  // computed on close
+  actualCash      Decimal?       @map("actual_cash") @db.Decimal(12, 2)    // counted by cashier
+  difference      Decimal?       @db.Decimal(12, 2)                         // actualCash - expectedCash
+  closingNote     String?        @map("closing_note") @db.VarChar(500)
+  closedAt        DateTime?      @map("closed_at")
+
+  outletId        String         @map("outlet_id") @db.VarChar(36)
+  outlet          Outlet         @relation(fields: [outletId], references: [id])
+
+  openedById      String         @map("opened_by_id") @db.VarChar(36)
+  openedBy        User           @relation("RegisterOpenedBy", fields: [openedById], references: [id])
+
+  closedById      String?        @map("closed_by_id") @db.VarChar(36)
+  closedBy        User?          @relation("RegisterClosedBy", fields: [closedById], references: [id])
+
+  movements       CashMovement[]
+
+  @@index([status])
+  @@index([outletId])
+  @@index([openedById])
+  @@index([openedAt])
+  @@index([status, openedById])
+  @@index([status, outletId])
+  @@index([status, openedAt])
+  @@map("cash_registers")
+}
+
+// Individual cash movements within a register session
+model CashMovement {
+  id           String           @id @default(uuid()) @db.VarChar(36)
+  type         CashMovementType
+  amount       Decimal          @db.Decimal(12, 2)  // always positive; direction driven by type
+  note         String?          @db.VarChar(255)
+  // Optional link to a PaymentTransaction (for SALE_CASH / REPAIR_CASH)
+  referenceId  String?          @map("reference_id") @db.VarChar(36)
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  registerId   String           @map("register_id") @db.VarChar(36)
+  register     CashRegister     @relation(fields: [registerId], references: [id], onDelete: Cascade)
+
+  createdById  String           @map("created_by_id") @db.VarChar(36)
+  createdBy    User             @relation("MovementCreatedBy", fields: [createdById], references: [id])
+
+  @@index([registerId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([registerId, createdAt])
+  @@index([registerId, type, createdAt])
+  @@map("cash_movements")
+}
+
+// =============================================================================
+// MODULE: Stock Transfers
+// Tracks the movement of stock between any two locations (outlet ↔ outlet,
+// warehouse ↔ outlet, warehouse ↔ warehouse).
+// Flow: PENDING → DISPATCHED (source deducted) → RECEIVED (destination added)
+//                                               → CANCELLED (before dispatch only)
+// =============================================================================
+
+enum TransferStatus {
+  PENDING      // Created, awaiting dispatch
+  DISPATCHED   // Stock removed from source; in transit
+  RECEIVED     // Stock added to destination; complete
+  CANCELLED    // Voided before it was dispatched
+}
+
+model StockTransfer {
+  id           String         @id @default(uuid()) @db.VarChar(36)
+  transferNo   String         @unique @map("transfer_no") @db.VarChar(30)  // TRF-YYYYMMDD-XXXXXX
+  status       TransferStatus @default(PENDING)
+  note         String?        @db.VarChar(500)
+
+  // Source and destination are polymorphic (OUTLET or WAREHOUSE)
+  // No FK constraint — resolved at service layer using LocationType
+  fromType     LocationType   @map("from_type")
+  fromId       String         @map("from_id") @db.VarChar(36)
+  toType       LocationType   @map("to_type")
+  toId         String         @map("to_id") @db.VarChar(36)
+
+  // Timestamps
+  dispatchedAt DateTime?      @map("dispatched_at")
+  receivedAt   DateTime?      @map("received_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  // Who did what
+  requestedById  String       @map("requested_by_id") @db.VarChar(36)
+  requestedBy    User         @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+
+  dispatchedById String?      @map("dispatched_by_id") @db.VarChar(36)
+  dispatchedBy   User?        @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+
+  receivedById   String?      @map("received_by_id") @db.VarChar(36)
+  receivedBy     User?        @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+
+  items          StockTransferItem[]
+
+  @@index([status])
+  @@index([fromId])
+  @@index([toId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([fromId, createdAt])
+  @@index([toId, createdAt])
+  @@map("stock_transfers")
+}
+
+// Individual line items within a transfer
+model StockTransferItem {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  quantity    Int                                              // requested qty
+  receivedQty Int           @default(0) @map("received_qty") // confirmed qty on receipt
+
+  transferId  String        @map("transfer_id") @db.VarChar(36)
+  transfer    StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  itemId      String        @map("item_id") @db.VarChar(36)
+  item        Item          @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+  @@index([itemId])
+  @@map("stock_transfer_items")
+}
+
+// =============================================================================
+// MODULE: Sale Returns
+// Handles customer returns of previously sold items.
+// Flow: PENDING → APPROVED (stock restored + RETURN movement) → (final)
+//                → REJECTED → (final)
+// Only COMPLETED sales can be returned; voided sales are already reversed.
+// =============================================================================
+
+enum ReturnStatus {
+  PENDING   // Submitted, awaiting manager approval
+  APPROVED  // Stock restored; refund/credit issued
+  REJECTED  // Return denied
+}
+
+enum ReturnReason {
+  DEFECTIVE             // Item is broken / not working
+  WRONG_ITEM            // Customer received incorrect item
+  CUSTOMER_CHANGE_MIND  // Customer no longer wants it
+  DAMAGED_IN_TRANSIT    // Packaging / shipping damage
+  OTHER                 // Free-text reason required
+}
+
+model SaleReturn {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  returnNo      String       @unique @map("return_no") @db.VarChar(30)  // RET-YYYYMMDD-XXXXXX
+  status        ReturnStatus @default(PENDING)
+  reason        ReturnReason
+  note          String?      @db.VarChar(500)
+
+  // Financials — computed on approval
+  refundAmount  Decimal      @default(0) @map("refund_amount") @db.Decimal(12, 2)
+
+  // Timestamps
+  processedAt   DateTime?    @map("processed_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  // Links
+  saleId        String       @map("sale_id") @db.VarChar(36)
+  sale          Sale         @relation(fields: [saleId], references: [id])
+
+  outletId      String       @map("outlet_id") @db.VarChar(36)
+  outlet        Outlet       @relation(fields: [outletId], references: [id])
+
+  createdById   String       @map("created_by_id") @db.VarChar(36)
+  createdBy     User         @relation("ReturnCreatedBy", fields: [createdById], references: [id])
+
+  processedById String?      @map("processed_by_id") @db.VarChar(36)
+  processedBy   User?        @relation("ReturnProcessedBy", fields: [processedById], references: [id])
+
+  items         SaleReturnItem[]
+
+  @@index([status])
+  @@index([saleId])
+  @@index([outletId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([outletId, status, createdAt])
+  @@index([saleId, status])
+  @@map("sale_returns")
+}
+
+// Individual line items within a return
+model SaleReturnItem {
+  id         String     @id @default(uuid()) @db.VarChar(36)
+  quantity   Int
+  unitPrice  Decimal    @map("unit_price") @db.Decimal(12, 2)  // locked from original sale line
+  subtotal   Decimal    @db.Decimal(12, 2)                      // unitPrice * quantity
+
+  returnId   String     @map("return_id") @db.VarChar(36)
+  return     SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  saleItemId String     @map("sale_item_id") @db.VarChar(36)
+  saleItem   SaleItem   @relation(fields: [saleItemId], references: [id])
+
+  itemId     String     @map("item_id") @db.VarChar(36)
+  item       Item       @relation(fields: [itemId], references: [id])
+
+  @@index([returnId])
+  @@index([saleItemId])
+  @@index([itemId])
+  @@map("sale_return_items")
+}
+

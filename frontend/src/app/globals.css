@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --surface: #f6f5ef;
+  --surface-elevated: #fffdf4;
+  --ink: #13202a;
+  --muted: #5f6b73;
+  --line: #d7d6cf;
+  --brand: #0f766e;
+  --brand-strong: #115e59;
+  --accent: #d97706;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 10%, rgba(15, 118, 110, 0.09), transparent 35%),
+    radial-gradient(circle at 90% 20%, rgba(217, 119, 6, 0.08), transparent 30%),
+    var(--surface);
+  color: var(--ink);
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+.card {
+  @apply rounded-2xl border border-line bg-surface-elevated shadow-sm;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-strong;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-xl border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-brand hover:text-brand;
+}

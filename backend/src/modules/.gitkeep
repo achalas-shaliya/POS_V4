@@ -1,0 +1,9 @@
+// Modules will be added here as they are built.
+// Example structure inside each module:
+//
+// src/modules/auth/
+// ├── auth.controller.ts
+// ├── auth.service.ts
+// ├── auth.repository.ts
+// ├── auth.routes.ts
+// └── auth.schema.ts   ← Zod validation schemas
