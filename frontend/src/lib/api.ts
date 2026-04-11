@@ -120,6 +120,40 @@ export type CustomerRecord = {
   email?: string | null;
 };
 
+export type SaleReceipt = {
+  id: string;
+  receiptNo: string;
+  createdAt: string;
+  status: string;
+  note?: string | null;
+  subtotal: number | string;
+  discountAmt: number | string;
+  total: number | string;
+  outlet: { id: string; name: string };
+  cashier: { id: string; fullName: string };
+  customer?: { id: string; name: string; phone: string } | null;
+  items: Array<{
+    id: string;
+    quantity: number;
+    unitPrice: number | string;
+    discount: number | string;
+    subtotal: number | string;
+    item: { id: string; sku: string; name: string };
+  }>;
+  payments: Array<{
+    id: string;
+    txNo: string;
+    totalAmount: number | string;
+    totalChange: number | string;
+    legs: Array<{
+      method: string;
+      amount: number | string;
+      change: number | string;
+      reference?: string | null;
+    }>;
+  }>;
+};
+
 export type RepairJobSummary = {
   id: string;
   jobNo: string;
@@ -554,7 +588,8 @@ export const api = {
     discountAmt?: number;
     items: { itemId: string; quantity: number; unitPrice?: number; discount?: number }[];
     payments: { method: "CASH" | "CARD"; amount: number; reference?: string }[];
-  }) => request("/sales/checkout", { method: "POST", body: JSON.stringify(payload) }),
+  }) => request<SaleReceipt>("/sales/checkout", { method: "POST", body: JSON.stringify(payload) }),
+  openCashDrawer: () => request<{ success: boolean; message: string }>("/cash-drawer/open", { method: "POST" }),
 
   listRepairJobs: (params?: {
     page?: number;

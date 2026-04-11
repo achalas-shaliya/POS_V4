@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, type OutletRecord, type StockRow } from "@/lib/api";
+import { api, type OutletRecord, type StockRow, type SaleReceipt } from "@/lib/api";
 import { PaymentModal } from "./payment-modal";
+import { ReceiptModal } from "./receipt-modal";
 
 type Product = {
   id: string;
@@ -53,6 +54,7 @@ export function PosScreen() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
 
   useEffect(() => {
     const loadOutlets = async () => {
@@ -104,6 +106,7 @@ export function PosScreen() {
   );
   const total = subtotal - totalDiscount;
   const itemsCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const hasStockError = cart.some((line) => line.quantity > line.stock);
 
   const addToCart = (product: Product) => {
     setCart((current) => {
@@ -155,7 +158,7 @@ export function PosScreen() {
   };
 
   const openPayment = () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || hasStockError) return;
     setPaymentOpen(true);
   };
 
@@ -199,7 +202,7 @@ export function PosScreen() {
           : null,
       ].filter((payment) => payment !== null);
 
-      await api.checkoutSale({
+      const sale = await api.checkoutSale({
         outletId: selectedOutletId,
         customerId,
         note: note.trim() || undefined,
@@ -213,7 +216,10 @@ export function PosScreen() {
         payments,
       });
 
+      setReceipt(sale);
       setSuccessMessage("Sale completed successfully.");
+      // Open cash drawer (fire-and-forget; failure is non-blocking)
+      void api.openCashDrawer().catch(() => {/* drawer not configured or unavailable */});
       clearCart();
       await refreshStock();
     } catch (err) {
@@ -376,7 +382,7 @@ export function PosScreen() {
               </div>
             ) : (
               cart.map((line) => (
-                <div key={line.id} className="rounded-2xl border border-line bg-surface p-4">
+                <div key={line.id} className={`rounded-2xl border p-4 ${line.quantity > line.stock ? "border-rose-400 bg-rose-50" : "border-line bg-surface"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold">{line.name}</p>
@@ -402,7 +408,8 @@ export function PosScreen() {
                       <button
                         type="button"
                         onClick={() => updateQuantity(line.id, 1)}
-                        className="px-3 py-2 text-sm font-bold text-muted transition hover:text-ink"
+                        disabled={line.quantity >= line.stock}
+                        className="px-3 py-2 text-sm font-bold text-muted transition hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                       >
                         +
                       </button>
@@ -420,6 +427,11 @@ export function PosScreen() {
                     </div>
                     <p className="text-xs text-muted">{asMoney(line.price)} each</p>
                   </div>
+                  {line.quantity > line.stock && (
+                    <p className="mt-2 text-xs font-medium text-rose-600">
+                      Only {line.stock} in stock — reduce quantity
+                    </p>
+                  )}
                   {/* Per-item discount */}
                   <div className="mt-3 flex items-center gap-2">
                     <label className="text-xs font-medium text-muted">Discount</label>
@@ -476,11 +488,16 @@ export function PosScreen() {
             <button
               type="button"
               onClick={openPayment}
-              className="mt-5 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+              disabled={hasStockError}
+              className="mt-5 w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Take payment
             </button>
-            <p className="mt-3 text-xs text-white/70">Cash, card, and mobile payments.</p>
+            {hasStockError ? (
+              <p className="mt-3 text-xs text-rose-400">Some items exceed available stock. Adjust quantities to continue.</p>
+            ) : (
+              <p className="mt-3 text-xs text-white/70">Cash, card, and mobile payments.</p>
+            )}
           </div>
         </aside>
       </div>
@@ -509,6 +526,14 @@ export function PosScreen() {
         onClose={() => setPaymentOpen(false)}
         onChange={(field, value) => setPaymentValues((current) => ({ ...current, [field]: value }))}
         onConfirm={confirmPayment}
+      />
+
+      <ReceiptModal
+        receipt={receipt}
+        onClose={() => {
+          setReceipt(null);
+          setPaymentOpen(false);
+        }}
       />
     </>
   );

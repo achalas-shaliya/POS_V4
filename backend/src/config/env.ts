@@ -17,6 +17,9 @@ const envSchema = z.object({
   // CORS
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
 
+  // Hardware
+  CASH_DRAWER_PORT: z.string().optional(), // e.g. "COM3" on Windows
+
   // JWT (populated when Auth module is added)
   JWT_SECRET: z.string().optional(),
   JWT_EXPIRES_IN: z.string().default('7d'),

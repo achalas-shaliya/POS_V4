@@ -36,6 +36,12 @@ const generatePaymentTxNo = (): string => {
 // inside a single $transaction so the DB stays consistent on any failure.
 // ---------------------------------------------------------------------------
 export const checkout = async (data: CheckoutInput, userId: string) => {
+  // ── 0. Verify cashier session is still valid ───────────────────────────────
+  const cashier = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true } });
+  if (!cashier || !cashier.isActive) {
+    throw new AppError('Your session is invalid. Please log out and log in again.', 401);
+  }
+
   // ── 1. Validate outlet ────────────────────────────────────────────────────
   const outlet = await invRepo.findOutletById(data.outletId);
   if (!outlet || !outlet.isActive) throw notFound('Outlet');

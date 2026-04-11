@@ -18,6 +18,7 @@ import cashRouter from './modules/cash/cash.routes';
 import transferRouter from './modules/transfer/transfer.routes';
 import returnsRouter from './modules/returns/returns.routes';
 import reportsRouter from './modules/reports/reports.routes';
+import cashDrawerRouter from './modules/cash-drawer/cash-drawer.routes';
 import { registerSwagger } from './docs/swagger';
 
 const app = express();
@@ -95,6 +96,7 @@ app.use('/api/v1/cash',      cashRouter);
 app.use('/api/v1/transfers',  transferRouter);
 app.use('/api/v1/returns',    returnsRouter);
 app.use('/api/v1/reports',    reportsRouter);
+app.use('/api/v1/cash-drawer', cashDrawerRouter);
 
 app.get('/api/v1', (_req, res) => {
   res.json({ message: 'POS API v1' });
