@@ -1,9 +1,7 @@
 {
   "compilerOptions": {
-    "moduleResolution": "Node16",
-    "baseUrl": ".",
     "target": "ES2020",
-    "module": "NodeNext",
+    "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
     "rootDir": "./src",
@@ -15,6 +13,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    // moduleResolution + baseUrl kept for path alias support;
+    // ignoreDeprecations silences TypeScript 6 migration warnings.
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@shared/*": ["src/shared/*"],
       "@config/*": ["src/config/*"],

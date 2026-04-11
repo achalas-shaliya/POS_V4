@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/sales", label: "POS", permission: "sales:read" },
   { href: "/dashboard/repairs", label: "Repairs", permission: "repairs:read" },
   { href: "/dashboard/inventory", label: "Inventory", permission: "inventory:read" },
+  { href: "/dashboard/customers", label: "Customers", permission: "sales:read" },
   { href: "/dashboard/transfers", label: "Transfers", permission: "transfers:read" },
   { href: "/dashboard/cash", label: "Cash", permission: "cash:read" },
   { href: "/dashboard/reports", label: "Reports", permission: "reports:read" },
