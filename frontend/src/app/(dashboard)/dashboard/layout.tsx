@@ -116,7 +116,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="card min-w-0 flex-1 p-4 md:p-6">{children}</div>
+        <div className="card min-w-0 flex-1 md:min-h-0 p-4 md:p-6">{children}</div>
       </div>
     </div>
   );

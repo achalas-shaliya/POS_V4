@@ -124,9 +124,9 @@ export function SalesHistoryScreen() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_400px] xl:items-start">
+    <div className="relative grid gap-5 md:h-full xl:grid-cols-[1.3fr_0.9fr] xl:items-stretch xl:overflow-hidden">
       {/* ── Left: list ── */}
-      <section className="space-y-4">
+      <section className="flex min-h-0 flex-col gap-4">
         {/* Toolbar */}
         <div className="card space-y-3 p-4">
           <div>
@@ -175,15 +175,15 @@ export function SalesHistoryScreen() {
         )}
 
         {/* Table */}
-        <div className="card overflow-hidden p-0">
+        <div className="card flex min-h-0 flex-1 flex-col overflow-hidden p-0">
           {loading ? (
             <p className="p-6 text-sm text-muted">Loading sales…</p>
           ) : sales.length === 0 ? (
             <p className="p-6 text-sm text-muted">No sales found for the selected filters.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="flex-1 overflow-x-auto overflow-y-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="border-b border-line bg-surface text-left text-xs uppercase tracking-[0.12em] text-muted">
                     <th className="px-4 py-3">Receipt #</th>
                     <th className="px-4 py-3">Date</th>
