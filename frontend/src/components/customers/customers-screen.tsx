@@ -58,26 +58,26 @@ export function CustomersScreen() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f5f5f7] p-4 md:p-6">
-      <div className="mb-6">
+    <div className="flex h-full flex-col gap-4">
+      <div>
         <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Directory</p>
         <h1 className="mt-1 text-2xl font-bold">Customers</h1>
       </div>
 
       {message && (
-        <div className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+        <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
           {message}
         </div>
       )}
       {error && (
-        <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
           {error}
         </div>
       )}
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row lg:items-stretch">
         {/* Left — customer list */}
-        <div className="flex-1 rounded-[28px] border border-line bg-white p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-line bg-white p-6">
           <div className="mb-4 flex items-center gap-3">
             <input
               value={search}
@@ -93,9 +93,9 @@ export function CustomersScreen() {
           ) : customers.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">No customers found.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="flex-1 overflow-y-auto">
               <table className="min-w-full divide-y divide-line text-sm">
-                <thead>
+                <thead className="sticky top-0 bg-white">
                   <tr className="text-left text-xs font-semibold uppercase tracking-wide text-muted">
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Phone</th>

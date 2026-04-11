@@ -187,6 +187,55 @@ export type RepairJobDetail = RepairJobSummary & {
   }>;
 };
 
+export type ReturnReason =
+  | "DEFECTIVE"
+  | "WRONG_ITEM"
+  | "CUSTOMER_CHANGE_MIND"
+  | "DAMAGED_IN_TRANSIT"
+  | "OTHER";
+
+export type ReturnStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export type ReturnSummary = {
+  id: string;
+  returnNo: string;
+  status: ReturnStatus;
+  reason: ReturnReason;
+  refundAmount: number | string;
+  createdAt: string;
+  processedAt: string | null;
+  outlet: { id: string; name: string };
+  sale: { id: string; receiptNo: string };
+  createdBy: { id: string; fullName: string };
+  processedBy: { id: string; fullName: string } | null;
+  _count: { items: number };
+};
+
+export type ReturnDetail = {
+  id: string;
+  returnNo: string;
+  status: ReturnStatus;
+  reason: ReturnReason;
+  note: string | null;
+  refundAmount: number | string;
+  createdAt: string;
+  processedAt: string | null;
+  outlet: { id: string; name: string };
+  sale: { id: string; receiptNo: string; total: number | string };
+  createdBy: { id: string; fullName: string };
+  processedBy: { id: string; fullName: string } | null;
+  items: Array<{
+    id: string;
+    quantity: number;
+    unitPrice: number | string;
+    subtotal: number | string;
+    itemId: string;
+    saleItemId: string;
+    item: { id: string; sku: string; name: string };
+    saleItem: { id: string; quantity: number; unitPrice: number | string };
+  }>;
+};
+
 export type TransferRecord = {
   id: string;
   transferNo: string;
@@ -590,6 +639,37 @@ export const api = {
     payments: { method: "CASH" | "CARD"; amount: number; reference?: string }[];
   }) => request<SaleReceipt>("/sales/checkout", { method: "POST", body: JSON.stringify(payload) }),
   openCashDrawer: () => request<{ success: boolean; message: string }>("/cash-drawer/open", { method: "POST" }),
+
+  // ---------------------------------------------------------------------------
+  // Sales — receipt lookup (used by Returns)
+  // ---------------------------------------------------------------------------
+  getSaleByReceiptNo: (receiptNo: string) =>
+    request<SaleReceipt>(`/sales/receipt/${encodeURIComponent(receiptNo)}`),
+  listSales: (params?: { page?: number; limit?: number; outletId?: string; status?: "COMPLETED" | "VOIDED"; fromDate?: string; toDate?: string }) =>
+    requestPaginated<SaleReceipt>("/sales", { page: 1, limit: 50, ...params }),
+  getSaleById: (id: string) =>
+    request<SaleReceipt>(`/sales/${id}`),
+  voidSale: (id: string, payload: { reason: string }) =>
+    request<SaleReceipt>(`/sales/${id}/void`, { method: "POST", body: JSON.stringify(payload) }),
+
+  // ---------------------------------------------------------------------------
+  // Returns / Refunds / Warranty Claims
+  // ---------------------------------------------------------------------------
+  listReturns: (params?: { page?: number; limit?: number; status?: ReturnStatus; outletId?: string; saleId?: string }) =>
+    requestPaginated<ReturnSummary>("/returns", { page: 1, limit: 50, ...params }),
+  getReturnById: (id: string) =>
+    request<ReturnDetail>(`/returns/${id}`),
+  createReturn: (payload: {
+    saleId: string;
+    outletId: string;
+    reason: ReturnReason;
+    note?: string;
+    items: { saleItemId: string; quantity: number }[];
+  }) => request<ReturnDetail>("/returns", { method: "POST", body: JSON.stringify(payload) }),
+  approveReturn: (id: string, payload?: { note?: string }) =>
+    request<ReturnDetail>(`/returns/${id}/approve`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
+  rejectReturn: (id: string, payload?: { note?: string }) =>
+    request<ReturnDetail>(`/returns/${id}/reject`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
 
   listRepairJobs: (params?: {
     page?: number;

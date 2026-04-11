@@ -1043,7 +1043,7 @@ export default function ReportsScreen() {
   };
 
   return (
-    <div className="space-y-5 xl:h-[calc(100vh-12rem)] xl:flex xl:flex-col">
+    <div className="space-y-5 xl:h-[calc(100vh-6rem)] xl:flex xl:flex-col">
 
       {/* Filter bar + tab selector row */}
       <div className="flex flex-col gap-4 xl:shrink-0">

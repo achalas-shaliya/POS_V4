@@ -532,7 +532,7 @@ export function InventoryScreen() {
   }
 
   return (
-    <div className="space-y-5 xl:h-[calc(100vh-12rem)] xl:flex xl:flex-col">
+    <div className="space-y-5 xl:h-[calc(100vh-6rem)] xl:flex xl:flex-col">
       {loading ? <p className="text-sm text-muted">Loading inventory workspace...</p> : null}
       {error ? <p className="text-sm font-medium text-rose-600">{error}</p> : null}
       {message ? <p className="text-sm font-medium text-emerald-700">{message}</p> : null}

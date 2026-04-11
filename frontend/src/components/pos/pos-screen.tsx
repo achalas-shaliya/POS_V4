@@ -251,7 +251,7 @@ export function PosScreen() {
         />
       )}
 
-      <div className="relative grid gap-5 xl:grid-cols-[1.3fr_0.9fr] xl:h-[calc(100vh-12rem)] xl:items-stretch">
+      <div className="relative grid gap-5 xl:grid-cols-[1.3fr_0.9fr] xl:h-[calc(100vh-6rem)] xl:items-stretch">
         {/* ── Products panel ── */}
         <section className="xl:flex xl:flex-col xl:min-h-0">
           {/* Sticky search bar */}

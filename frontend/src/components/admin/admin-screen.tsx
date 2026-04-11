@@ -191,7 +191,7 @@ export function AdminScreen() {
   }
 
   return (
-    <div className="space-y-5 xl:h-[calc(100vh-12rem)] xl:flex xl:flex-col">
+    <div className="space-y-5 xl:h-[calc(100vh-6rem)] xl:flex xl:flex-col">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between xl:shrink-0">
         <div className="flex gap-4">
           <div className="rounded-[24px] border border-line bg-white px-5 py-4">

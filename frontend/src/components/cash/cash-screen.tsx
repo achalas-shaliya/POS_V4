@@ -170,7 +170,7 @@ export function CashScreen() {
   }
 
   return (
-    <div className="space-y-5 xl:h-[calc(100vh-12rem)] xl:flex xl:flex-col">
+    <div className="space-y-5 xl:h-[calc(100vh-6rem)] xl:flex xl:flex-col">
 
       {loading && <p className="text-sm text-muted">Loading cash registry...</p>}
       {error && <p className="text-sm font-medium text-rose-600">{error}</p>}
