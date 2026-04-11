@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import JsBarcode from "jsbarcode";
 import type { SaleReceipt } from "@/lib/api";
 
 const money = (v: number | string) => `Rs. ${Number(v).toFixed(2)}`;
@@ -188,9 +189,30 @@ function ReceiptBody({
       )}
 
       <Divider />
+      <Barcode value={receipt.receiptNo} />
+      <Divider />
       <p className="text-center text-gray-400">Thank you for your purchase!</p>
     </div>
   );
+}
+
+function Barcode({ value }: { value: string }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    if (svgRef.current) {
+      JsBarcode(svgRef.current, value, {
+        format: "CODE128",
+        width: 1.5,
+        height: 40,
+        displayValue: true,
+        fontSize: 10,
+        margin: 0,
+        background: "#ffffff",
+        lineColor: "#000000",
+      });
+    }
+  }, [value]);
+  return <svg ref={svgRef} className="w-full" />;
 }
 
 function Divider() {
