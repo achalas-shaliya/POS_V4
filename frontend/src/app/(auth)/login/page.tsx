@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const reason = searchParams.get("reason");
+  const reasonMessage =
+    reason === "session_expired"
+      ? "Your session has expired. Please sign in again to continue."
+      : null;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,6 +39,12 @@ export default function LoginPage() {
     <div className="card w-full p-6 shadow-md md:p-8">
       <h2 className="text-2xl font-bold">Sign in</h2>
       <p className="mt-2 text-sm text-muted">Enter your account credentials to continue.</p>
+
+      {reasonMessage && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          {reasonMessage}
+        </div>
+      )}
 
       <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
         <label className="block">

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type OutletRecord, type StockRow, type SaleReceipt } from "@/lib/api";
+import { useBarcodeScanner } from "@/lib/use-barcode-scanner";
+import { CameraBarcodeScannerModal } from "./camera-barcode-scanner-modal";
 import { PaymentModal } from "./payment-modal";
 import { ReceiptModal } from "./receipt-modal";
 
@@ -55,6 +57,18 @@ export function PosScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleBarcodeScan = useCallback((code: string) => {
+    setQuery(code);
+  }, []);
+
+  useBarcodeScanner({
+    enabled: !!session && !!selectedOutletId,
+    targetRef: searchInputRef,
+    onScan: handleBarcodeScan,
+  });
 
   useEffect(() => {
     const loadOutlets = async () => {
@@ -271,12 +285,22 @@ export function PosScreen() {
                 </select>
               </div>
               <input
+                ref={searchInputRef}
                 type="text"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search products by name, SKU, or category"
+                placeholder="Search products by name, SKU, category, or scan barcode"
                 className="w-full rounded-2xl border border-line bg-surface px-4 py-3 text-sm outline-none ring-brand/30 transition focus:ring"
               />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setCameraScannerOpen(true)}
+                  className="rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-ink transition hover:border-brand hover:text-brand"
+                >
+                  Scan with camera
+                </button>
+              </div>
             </div>
           </div>
 
@@ -534,6 +558,16 @@ export function PosScreen() {
           setReceipt(null);
           setPaymentOpen(false);
         }}
+      />
+
+      <CameraBarcodeScannerModal
+        open={cameraScannerOpen}
+        onClose={() => setCameraScannerOpen(false)}
+        onDetected={(code) => {
+          setQuery(code);
+          searchInputRef.current?.focus();
+        }}
+        title="Scan item barcode"
       />
     </>
   );

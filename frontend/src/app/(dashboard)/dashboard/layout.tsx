@@ -101,9 +101,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* ── Main ── */}
-      <div className="flex flex-1 flex-col gap-4 px-4 py-4 md:h-full md:overflow-y-auto md:px-0 md:py-0">
-        {/* Mobile hamburger — only visible on small screens */}
-        <div className="flex items-center md:hidden">
+      <div className="flex flex-1 flex-col md:h-full md:overflow-hidden md:px-0 md:py-0">
+        {/* Mobile hamburger — sticky bar, only visible on small screens */}
+        <div className="sticky top-0 z-10 flex items-center border-b border-line bg-surface px-4 py-2 md:hidden">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -116,7 +116,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="card min-w-0 flex-1 md:min-h-0 p-4 md:p-6">{children}</div>
+        <div className="card min-w-0 flex-1 overflow-y-auto md:min-h-0 p-4 md:p-6">{children}</div>
       </div>
     </div>
   );

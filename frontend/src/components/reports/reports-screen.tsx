@@ -486,7 +486,7 @@ function InventoryTab({ outletId: appliedOutletId }: { outletId: string }) {
     try {
       const mov = await api.getInventoryMovements({ page: movPage, limit: MOV_PAGE_SIZE });
       setMovements(mov.data);
-      setMovTotal(mov.total);
+      setMovTotal(mov.meta?.total ?? mov.data.length);
     } catch {
       // non-critical — ignore movement errors
     }

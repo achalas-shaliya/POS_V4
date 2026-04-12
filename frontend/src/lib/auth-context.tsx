@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, getSession, type AuthUser } from "./api";
+import { useRouter } from "next/navigation";
+import { api, getSession, clearSession, setSessionExpiredCallback, type AuthUser } from "./api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +37,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
   // Hydrate from localStorage on mount (client-only)
   useEffect(() => {
@@ -43,6 +45,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session?.user ?? null);
     setIsLoading(false);
   }, []);
+
+  // Register the session-expired hook so the API layer can trigger a redirect.
+  useEffect(() => {
+    setSessionExpiredCallback(() => {
+      clearSession();
+      setUser(null);
+      router.replace("/login?reason=session_expired");
+    });
+  }, [router]);
 
   const login = useCallback(async (email: string, password: string) => {
     const session = await api.login(email, password);

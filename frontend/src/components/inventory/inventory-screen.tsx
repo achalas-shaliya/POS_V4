@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   api,
   type BrandRecord,
@@ -11,6 +11,8 @@ import {
   type StockRow,
   type WarehouseRecord,
 } from "@/lib/api";
+import { useBarcodeScanner } from "@/lib/use-barcode-scanner";
+import { CameraBarcodeScannerModal } from "@/components/pos/camera-barcode-scanner-modal";
 
 type ItemType = "ACCESSORY" | "SPARE_PART" | "TOOL";
 type UnitType = "PIECE" | "BOX" | "SET" | "PAIR";
@@ -129,6 +131,8 @@ export function InventoryScreen() {
   const [tablePage, setTablePage] = useState(1);
   const [activeTab, setActiveTab] = useState<"stock" | "category" | "brand" | "restock">("stock");
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const stockSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Restock — bulk batch
   type RestockMode = "purchase" | "adjust" | "transfer";
@@ -155,6 +159,16 @@ export function InventoryScreen() {
   const deferredSearch = useDeferredValue(search);
   const normalizedSearch = deferredSearch.trim().toLowerCase();
   const sessionKey = session?.accessToken ?? "";
+
+  const handleBarcodeScan = useCallback((code: string) => {
+    setSearch(code);
+  }, []);
+
+  useBarcodeScanner({
+    enabled: !!session,
+    targetRef: stockSearchInputRef,
+    onScan: handleBarcodeScan,
+  });
 
   const loadStock = async (warehouseData: WarehouseRecord[], outletData: OutletRecord[]) => {
     const warehouseStockResponses = await Promise.all(
@@ -601,7 +615,14 @@ export function InventoryScreen() {
                   <h3 className="mt-1 text-xl font-bold">Live stock snapshot</h3>
                 </div>
                 <div className="flex flex-col gap-3 md:flex-row">
-                  <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, item, category, location" className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none ring-brand/30 transition focus:ring md:w-72" />
+                  <input ref={stockSearchInputRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search SKU, item, category, location, or scan barcode" className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none ring-brand/30 transition focus:ring md:w-72" />
+                  <button
+                    type="button"
+                    onClick={() => setCameraScannerOpen(true)}
+                    className="rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-brand hover:text-brand"
+                  >
+                    Scan with camera
+                  </button>
                   <select value={warehouseFilter} onChange={(event) => setWarehouseFilter(event.target.value)} className="rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none">
                     <option value="ALL">All locations</option>
                     {[...warehouses, ...outlets].map((location) => <option key={location.id} value={location.name}>{location.name}</option>)}
@@ -1364,6 +1385,16 @@ export function InventoryScreen() {
           </div>
         </div>
       )}
+
+      <CameraBarcodeScannerModal
+        open={cameraScannerOpen}
+        onClose={() => setCameraScannerOpen(false)}
+        onDetected={(code) => {
+          setSearch(code);
+          stockSearchInputRef.current?.focus();
+        }}
+        title="Scan stock barcode"
+      />
     </div>
   );
 }

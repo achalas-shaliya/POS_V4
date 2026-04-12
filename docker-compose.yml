@@ -1,0 +1,77 @@
+services:
+
+  # ── Database ──────────────────────────────────────────────────────────────
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MARIADB_DATABASE: ${DB_NAME:-pos_db}
+      MARIADB_USER: ${DB_USER:-pos_user}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-pos_pass}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - pos_net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend (Express + Prisma) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: mysql://${DB_USER:-pos_user}:${DB_PASSWORD:-pos_pass}@db:3306/${DB_NAME:-pos_db}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      CASH_DRAWER_PORT: ${CASH_DRAWER_PORT:-}
+    ports:
+      - "5000:5000"
+    networks:
+      - pos_net
+    # ── Cash drawer via USB-to-serial adapter ──────────────────────────────
+    # Uncomment and set CASH_DRAWER_PORT=/dev/ttyUSB0 in .env to enable.
+    # The host user running Docker must be in the 'dialout' group.
+    #
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    # group_add:
+    #   - dialout
+
+  # ── Frontend (Next.js standalone) ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Must be the URL the BROWSER uses to reach the backend.
+        # If deploying to a server, set this to your public domain, e.g.:
+        #   NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com/api/v1
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:5000/api/v1}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - pos_net
+
+networks:
+  pos_net:
+    driver: bridge
+
+volumes:
+  db_data:

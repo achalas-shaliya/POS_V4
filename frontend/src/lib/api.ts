@@ -3,6 +3,13 @@ const API_BASE_URL =
 
 const SESSION_KEY = "pos.session";
 
+// Called when a 401 cannot be recovered (refresh token also expired/missing).
+// Registered by AuthProvider so that the API layer can trigger a logout + redirect.
+let _onSessionExpired: (() => void) | null = null;
+export const setSessionExpiredCallback = (cb: () => void) => {
+  _onSessionExpired = cb;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   message: string;
@@ -469,6 +476,9 @@ const request = async <T>(
     if (refreshedToken) {
       return request<T>(path, init, false);
     }
+    // Refresh also failed — session is fully expired.
+    _onSessionExpired?.();
+    throw new Error("Session expired. Please sign in again.");
   }
 
   if (response.status === 204) {
@@ -507,6 +517,9 @@ const requestPaginated = async <T>(
     if (refreshedToken) {
       return requestPaginated<T>(path, params);
     }
+    // Refresh also failed — session is fully expired.
+    _onSessionExpired?.();
+    throw new Error("Session expired. Please sign in again.");
   }
 
   const json = (await response.json()) as ApiEnvelope<T[]>;
