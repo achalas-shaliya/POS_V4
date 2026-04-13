@@ -5,6 +5,7 @@ import { getPaginationArgs } from '../../shared/utils/pagination';
 import * as repo from './repair.repository';
 import * as invRepo from '../inventory/inventory.repository';
 import { recordCashFromPayment } from '../cash/cash.service';
+import { notifyRepairJobCreated, notifyRepairJobChanged } from '../../shared/realtime/repairRealtime';
 import { ALLOWED_TRANSITIONS } from './repair.schema';
 import type {
   CreateRepairJobInput,
@@ -92,6 +93,12 @@ export const createRepairJob = async (
     return newJob;
   });
 
+  notifyRepairJobCreated({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+  });
+
   return job;
 };
 
@@ -119,6 +126,13 @@ export const updateRepairJob = async (id: string, data: UpdateRepairJobInput) =>
       await repo.recalcTotalCostInTx(tx, id);
     });
   }
+
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'UPDATED',
+  });
 
   return updated;
 };
@@ -161,6 +175,13 @@ export const updateStatus = async (
     );
   });
 
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'STATUS_CHANGED',
+  });
+
   return repo.findJobById(id);
 };
 
@@ -189,7 +210,7 @@ export const addPart = async (
 
   const unitCost = input.unitCost ?? Number(item.costPrice);
 
-  return prisma.$transaction(async (tx) => {
+  const part = await prisma.$transaction(async (tx) => {
     // Validate + deduct stock
     const stock = await invRepo.getOutletStockInTx(tx, job.outletId, input.itemId);
     if (!stock || stock.quantity < input.quantity) {
@@ -220,6 +241,15 @@ export const addPart = async (
 
     return part;
   });
+
+  notifyRepairJobChanged({
+    repairId,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'PART_ADDED',
+  });
+
+  return part;
 };
 
 // ---------------------------------------------------------------------------
@@ -256,6 +286,13 @@ export const removePart = async (partId: string, userId: string) => {
 
     await repo.removePartInTx(tx, partId);
     await repo.recalcTotalCostInTx(tx, job.id);
+  });
+
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'PART_REMOVED',
   });
 };
 
@@ -323,6 +360,13 @@ export const addAdvance = async (
       // No open register — silently skip
     }
   }
+
+  notifyRepairJobChanged({
+    repairId,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'PAYMENT_ADDED',
+  });
 
   return repo.findJobById(repairId);
 };

@@ -3,6 +3,7 @@ import { AppError, notFound } from '../../shared/middleware/errorHandler';
 import { SaleStatus, RepairStatus } from '../../generated/prisma/enums';
 import { getPaginationArgs } from '../../shared/utils/pagination';
 import * as repo from './payment.repository';
+import { notifyRepairJobChanged } from '../../shared/realtime/repairRealtime';
 import type {
   RecordSalePaymentInput,
   RecordRepairPaymentInput,
@@ -167,7 +168,7 @@ export const recordRepairPayment = async (
   const enrichedLegs = buildLegsWithChange(input.payments, change);
   const txNo = generateTxNo();
 
-  return prisma.$transaction(async (dbTx) => {
+  const transaction = await prisma.$transaction(async (dbTx) => {
     const transaction = await repo.createTransactionInTx(dbTx, {
       txNo,
       entityType:  'REPAIR',
@@ -188,6 +189,15 @@ export const recordRepairPayment = async (
 
     return transaction;
   });
+
+  notifyRepairJobChanged({
+    repairId: repairJobId,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'PAYMENT_ADDED',
+  });
+
+  return transaction;
 };
 
 /**
@@ -218,7 +228,7 @@ export const settleRepair = async (
   const txNo = generateTxNo();
   const now  = new Date();
 
-  return prisma.$transaction(async (dbTx) => {
+  const settled = await prisma.$transaction(async (dbTx) => {
     // Record settlement payment
     const transaction = await repo.createTransactionInTx(dbTx, {
       txNo,
@@ -255,6 +265,15 @@ export const settleRepair = async (
 
     return { transaction, status: RepairStatus.DELIVERED };
   });
+
+  notifyRepairJobChanged({
+    repairId: repairJobId,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'SETTLED',
+  });
+
+  return settled;
 };
 
 /**

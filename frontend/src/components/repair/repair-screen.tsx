@@ -10,6 +10,7 @@ import {
   type StockRow,
   type UserRecord,
 } from "@/lib/api";
+import { subscribeRepairRealtime } from "@/lib/realtime";
 import Link from "next/link";
 
 type RepairStatus = "PENDING" | "IN_PROGRESS" | "DONE" | "DELIVERED" | "CANCELLED";
@@ -53,6 +54,8 @@ const STATUS_STYLES: Record<RepairStatus, string> = {
   DELIVERED: "bg-teal-100 text-teal-700",
   CANCELLED: "bg-rose-100 text-rose-700",
 };
+
+const REPAIR_REFRESH_MS = 5000;
 
 const money = (value: number) => `Rs. ${value.toFixed(2)}`;
 
@@ -196,6 +199,70 @@ export function RepairScreen() {
 
     void reloadDetail();
   }, [loadSelectedJob, selectedJobId, sessionKey]);
+
+  useEffect(() => {
+    if (!sessionKey) return;
+
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+
+      try {
+        const data = await loadJobs(statusFilter);
+        const currentSelectedId = selectedJobId;
+        const nextSelectedId = currentSelectedId
+          ? (data.some((job) => job.id === currentSelectedId) ? currentSelectedId : (data[0]?.id ?? ""))
+          : (data[0]?.id ?? "");
+
+        if (nextSelectedId !== currentSelectedId) {
+          setSelectedJobId(nextSelectedId);
+        } else if (nextSelectedId) {
+          await loadSelectedJob(nextSelectedId);
+        } else {
+          setSelectedJob(null);
+        }
+      } catch {
+        // Silent polling failure; keep last known UI state.
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refresh();
+    }, REPAIR_REFRESH_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [loadJobs, loadSelectedJob, selectedJobId, sessionKey, statusFilter]);
+
+  useEffect(() => {
+    if (!sessionKey) return;
+
+    const unsubscribe = subscribeRepairRealtime(async () => {
+      if (document.visibilityState !== "visible") return;
+
+      try {
+        const data = await loadJobs(statusFilter);
+        const currentSelectedId = selectedJobId;
+        const nextSelectedId = currentSelectedId
+          ? (data.some((job) => job.id === currentSelectedId) ? currentSelectedId : (data[0]?.id ?? ""))
+          : (data[0]?.id ?? "");
+
+        if (nextSelectedId !== currentSelectedId) {
+          setSelectedJobId(nextSelectedId);
+        } else if (nextSelectedId) {
+          await loadSelectedJob(nextSelectedId);
+        } else {
+          setSelectedJob(null);
+        }
+      } catch {
+        // Ignore realtime refresh failures and keep current UI state.
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadJobs, loadSelectedJob, selectedJobId, sessionKey, statusFilter]);
 
   const filteredParts = useMemo(
     () =>

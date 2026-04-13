@@ -20,6 +20,7 @@ import returnsRouter from './modules/returns/returns.routes';
 import reportsRouter from './modules/reports/reports.routes';
 import cashDrawerRouter from './modules/cash-drawer/cash-drawer.routes';
 import { registerSwagger } from './docs/swagger';
+import { initRepairRealtime, shutdownRepairRealtime } from './shared/realtime/repairRealtime';
 
 const app = express();
 
@@ -130,10 +131,13 @@ const server = app.listen(env.PORT, () => {
   console.log(`   └─ Health: http://localhost:${env.PORT}/health\n`);
 });
 
+initRepairRealtime(server, Array.from(allowedOrigins));
+
 // Graceful shutdown
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received — shutting down gracefully…`);
   server.close(async () => {
+    await shutdownRepairRealtime();
     await prisma.$disconnect();
     console.log('Database disconnected. Bye!');
     process.exit(0);

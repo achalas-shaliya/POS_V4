@@ -11,6 +11,7 @@ import {
   type CashSummary,
   type TopItemRow,
 } from "@/lib/api";
+import { subscribeRepairRealtime } from "@/lib/realtime";
 
 const money = (v: number) => `Rs. ${v.toFixed(2)}`;
 
@@ -50,6 +51,8 @@ const QUICK_NAV = [
   { href: "/dashboard/reports",   label: "Reports",   icon: "📊" },
 ];
 
+const OVERVIEW_REFRESH_MS = 10000;
+
 function greeting(name: string) {
   const h = new Date().getHours();
   const salut = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
@@ -68,9 +71,13 @@ export function OverviewScreen() {
   const [error, setError]         = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const from = todayFrom();
     const to   = todayTo();
-    const load = async () => {
+
+    const load = async (silent = false) => {
+      if (!silent) setLoading(true);
+
       try {
         const [salesData, repairsData, inventoryData, cashData, topData] = await Promise.all([
           api.getSalesSummary({ fromDate: from, toDate: to }),
@@ -79,18 +86,65 @@ export function OverviewScreen() {
           api.getCashSummary({ fromDate: from, toDate: to }),
           api.getTopItems({ fromDate: from, toDate: to, limit: 5 }),
         ]);
+
+        if (!active) return;
         setSales(salesData);
         setRepairs(repairsData);
         if ("outlets" in inventoryData) setInventory(inventoryData as InventorySnapshotTotals);
         setCash(cashData);
         setTopItems(topData);
+        setError(null);
       } catch (err) {
+        if (!active) return;
         setError(err instanceof Error ? err.message : "Failed to load overview");
       } finally {
-        setLoading(false);
+        if (!silent && active) setLoading(false);
       }
     };
+
     void load();
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void load(true);
+    }, OVERVIEW_REFRESH_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeRepairRealtime(async () => {
+      if (document.visibilityState !== "visible") return;
+
+      const from = todayFrom();
+      const to = todayTo();
+
+      try {
+        const [salesData, repairsData, inventoryData, cashData, topData] = await Promise.all([
+          api.getSalesSummary({ fromDate: from, toDate: to }),
+          api.getRepairSummary({}),
+          api.getInventorySnapshot({}),
+          api.getCashSummary({ fromDate: from, toDate: to }),
+          api.getTopItems({ fromDate: from, toDate: to, limit: 5 }),
+        ]);
+
+        setSales(salesData);
+        setRepairs(repairsData);
+        if ("outlets" in inventoryData) setInventory(inventoryData as InventorySnapshotTotals);
+        setCash(cashData);
+        setTopItems(topData);
+        setError(null);
+      } catch {
+        // Keep existing dashboard values on transient websocket refresh errors.
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const openRepairs = repairs?.byStatus

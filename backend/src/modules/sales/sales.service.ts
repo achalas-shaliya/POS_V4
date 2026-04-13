@@ -4,6 +4,7 @@ import { MovementType, LocationType, SaleStatus } from '../../generated/prisma/e
 import { getPaginationArgs } from '../../shared/utils/pagination';
 import * as repo from './sales.repository';
 import * as invRepo from '../inventory/inventory.repository';
+import * as cashRepo from '../cash/cash.repository';
 import { recordCashFromPayment } from '../cash/cash.service';
 import type {
   CheckoutInput,
@@ -45,6 +46,21 @@ export const checkout = async (data: CheckoutInput, userId: string) => {
   // ── 1. Validate outlet ────────────────────────────────────────────────────
   const outlet = await invRepo.findOutletById(data.outletId);
   if (!outlet || !outlet.isActive) throw notFound('Outlet');
+
+  // ── 1.1 Enforce: cashier must have an OPEN register for this outlet ──────
+  const openRegister = await cashRepo.findOpenRegisterByUser(userId);
+  if (!openRegister) {
+    throw new AppError(
+      'Open cash register is required to run POS checkout. Please open a register first.',
+      400,
+    );
+  }
+  if (openRegister.outletId !== data.outletId) {
+    throw new AppError(
+      `Your open register belongs to a different outlet (${openRegister.outlet.name}). Please open/register at this outlet first.`,
+      400,
+    );
+  }
 
   // ── 2. Resolve items from DB (batch-fetch) ────────────────────────────────
   const itemIds = data.items.map((i) => i.itemId);
