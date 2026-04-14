@@ -1,6 +1,7 @@
 "use client";
 
 import { PaymentModal } from "../pos/payment-modal";
+import { RepairReceiptModal } from "./repair-receipt-modal";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
@@ -83,6 +84,7 @@ export function RepairScreen() {
   const [paymentValues, setPaymentValues] = useState({ cash: "", card: "", mobile: "" });
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [printJob, setPrintJob] = useState<RepairJobDetail | null>(null);
   const [activeTab, setActiveTab] = useState<"create" | "jobs">("create");
   const [jobDiscount, setJobDiscount] = useState(0);
   const [jobDiscountInput, setJobDiscountInput] = useState("");
@@ -308,7 +310,7 @@ export function RepairScreen() {
   );
 
   const selectedJobPartsCost =
-    selectedJob?.parts.reduce((sum, part) => sum + Number(part.subtotal), 0) ?? 0;
+    selectedJob?.parts.reduce((sum, part) => part.used === true ? sum + (Number(part.quantity) * Number(part.unitCost) - Number(part.discount)) : sum, 0) ?? 0;
   const selectedJobTotal = Number(selectedJob?.laborCost ?? 0) + selectedJobPartsCost;
   const selectedJobNet   = Math.max(0, selectedJobTotal - jobDiscount);
 
@@ -346,10 +348,14 @@ export function RepairScreen() {
         laborCost: Number(form.laborCost || 0),
       });
 
+      const createdDetail = await api.getRepairJob(created.id);
+
       setMessage("Repair job created.");
       setForm((current) => ({ ...INITIAL_FORM, outletId: current.outletId }));
       await loadJobs(statusFilter);
       setSelectedJobId(created.id);
+      setSelectedJob(createdDetail);
+      setPrintJob(createdDetail);
       setActiveTab("jobs");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create repair job");
@@ -373,6 +379,62 @@ export function RepairScreen() {
       setMessage("Part added to repair job.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add repair part");
+    }
+  };
+
+  const removePartFromSelectedJob = async (partId: string) => {
+    if (!selectedJob) return;
+
+    try {
+      setError(null);
+      setMessage(null);
+      await api.removeRepairPart(selectedJob.id, partId);
+      await Promise.all([loadJobs(statusFilter), loadSelectedJob(selectedJob.id)]);
+      setMessage("Part removed from repair job.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove repair part");
+    }
+  };
+
+  const updatePartDiscount = async (partId: string, discountValue: number) => {
+    if (!selectedJob) return;
+
+    try {
+      setError(null);
+      await api.updateRepairPartDiscount(selectedJob.id, partId, { discount: discountValue });
+      await Promise.all([loadJobs(statusFilter), loadSelectedJob(selectedJob.id)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update discount");
+    }
+  };
+
+  const updatePartQuantity = async (partId: string, qtyDelta: number) => {
+    if (!selectedJob) return;
+
+    const part = selectedJob.parts.find((p) => p.id === partId);
+    if (!part) return;
+
+    const newQty = Math.max(1, Number(part.quantity) + qtyDelta);
+    if (newQty === Number(part.quantity)) return;
+
+    try {
+      setError(null);
+      await api.updateRepairPartQuantity(selectedJob.id, partId, { quantity: newQty });
+      await Promise.all([loadJobs(statusFilter), loadSelectedJob(selectedJob.id)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update quantity");
+    }
+  };
+
+  const updatePartUsedStatus = async (partId: string, used: boolean) => {
+    if (!selectedJob) return;
+
+    try {
+      setError(null);
+      await api.updateRepairPartUsed(selectedJob.id, partId, { used });
+      await Promise.all([loadJobs(statusFilter), loadSelectedJob(selectedJob.id)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update used status");
     }
   };
 
@@ -540,11 +602,11 @@ export function RepairScreen() {
 
       {/* Tab: Job list */}
       {activeTab === "jobs" && (
-        <div className="xl:flex-1 xl:overflow-y-auto">
-          <div className="grid gap-5 xl:grid-cols-[1fr_1fr] xl:items-start">
+        <div className="xl:flex-1 xl:min-h-0">
+          <div className="grid gap-5 xl:h-full xl:min-h-0 xl:grid-cols-[1fr_1fr] xl:items-start">
 
             {/* Job queue */}
-            <div className="rounded-[28px] border border-line bg-white p-5">
+            <div className="rounded-[28px] border border-line bg-white p-5 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Job list</p>
@@ -566,7 +628,7 @@ export function RepairScreen() {
                 className="mt-3 w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none ring-brand/30 transition focus:ring"
               />
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 space-y-3 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
                 {visibleJobs.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-line bg-surface p-4 text-sm text-muted">No jobs found.</p>
                 ) : visibleJobs.map((job) => (
@@ -590,7 +652,7 @@ export function RepairScreen() {
 
             {/* Selected job detail */}
             {selectedJob ? (
-              <div className="rounded-[28px] border border-line bg-white p-5">
+              <div className="rounded-[28px] border border-line bg-white p-5 xl:h-full xl:overflow-y-auto">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Selected job</p>
@@ -627,15 +689,88 @@ export function RepairScreen() {
                     {selectedJob.parts.length === 0 ? (
                       <p className="rounded-xl border border-dashed border-line bg-surface p-4 text-sm text-muted">No parts recorded yet.</p>
                     ) : (
-                      selectedJob.parts.map((part) => (
-                        <div key={part.id} className="flex items-center justify-between rounded-xl border border-line bg-surface px-3 py-2 text-sm">
-                          <div>
-                            <span className="font-medium text-ink">{part.item.name}</span>
-                            <span className="ml-2 text-muted">{part.item.sku} • x{part.quantity}</span>
+                      selectedJob.parts.map((part) => {
+                        const partTotal = Number(part.quantity) * Number(part.unitCost) - Number(part.discount);
+                        return (
+                          <div key={part.id} className="space-y-2 rounded-xl border border-line bg-surface p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-ink">{part.item.name}</p>
+                                <p className="text-xs text-muted">{part.item.sku} • {part.quantity} × {money(Number(part.unitCost))}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removePartFromSelectedJob(part.id)}
+                                className="rounded-lg border border-rose-300 px-2 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs font-medium text-muted">Qty</label>
+                                <div className="inline-flex items-center rounded-xl border border-line bg-white">
+                                  <button
+                                    type="button"
+                                    onClick={() => updatePartQuantity(part.id, -1)}
+                                    className="px-2.5 py-1 text-xs font-bold text-muted transition hover:text-ink"
+                                  >
+                                    −
+                                  </button>
+                                  <span className="min-w-8 px-1 text-center text-xs font-semibold">{part.quantity}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updatePartQuantity(part.id, 1)}
+                                    className="px-2.5 py-1 text-xs font-bold text-muted transition hover:text-ink"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`used-${part.id}`}
+                                  checked={part.used === true}
+                                  onChange={(e) => updatePartUsedStatus(part.id, e.target.checked)}
+                                  className="h-4 w-4 rounded border-line"
+                                />
+                                <label htmlFor={`used-${part.id}`} className="text-xs font-medium text-muted cursor-pointer">
+                                  Used/Charged
+                                </label>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs font-medium text-muted">Discount</label>
+                              <div className="flex items-center rounded-xl border border-line bg-white px-3 py-1.5">
+                                <span className="mr-1 text-xs font-medium text-muted">Rs.</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  placeholder="0.00"
+                                  value={Number(part.discount) > 0 ? Number(part.discount) : ""}
+                                  onChange={(e) => updatePartDiscount(part.id, e.target.value ? Number(e.target.value) : 0)}
+                                  className="w-20 bg-transparent text-xs font-semibold text-rose-600 outline-none placeholder:text-muted"
+                                />
+                              </div>
+                              {Number(part.discount) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => updatePartDiscount(part.id, 0)}
+                                  className="text-xs text-muted transition hover:text-rose-600"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex justify-between border-t border-line pt-2 text-sm font-semibold">
+                              <span className="text-muted">Subtotal</span>
+                              <span className="text-ink">{money(partTotal)}</span>
+                            </div>
                           </div>
-                          <span className="font-semibold text-ink">{money(Number(part.subtotal))}</span>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -734,6 +869,15 @@ export function RepairScreen() {
                         Take payment
                       </button>
                     )}
+                    {(selectedJob.status === "DONE" || selectedJob.status === "DELIVERED") && (
+                      <button
+                        type="button"
+                        onClick={() => setPrintJob(selectedJob)}
+                        className="rounded-xl bg-white/20 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/30"
+                      >
+                        Print receipt
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -756,6 +900,10 @@ export function RepairScreen() {
       onClose={() => setPaymentOpen(false)}
       onChange={(field, value) => setPaymentValues((current) => ({ ...current, [field]: value }))}
       onConfirm={confirmRepairPayment}
+    />
+    <RepairReceiptModal
+      job={printJob}
+      onClose={() => setPrintJob(null)}
     />
     </>
   );

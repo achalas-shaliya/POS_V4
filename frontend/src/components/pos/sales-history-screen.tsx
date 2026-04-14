@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, type OutletRecord, type SaleReceipt } from "@/lib/api";
+import { ReceiptModal } from "./receipt-modal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,13 +18,6 @@ const DATE_FMT = (iso: string) =>
     minute: "2-digit",
   });
 
-const STATUS_STYLES: Record<string, string> = {
-  COMPLETED: "bg-emerald-100 text-emerald-700",
-  VOIDED: "bg-rose-100 text-rose-700",
-};
-
-type SaleStatus = "COMPLETED" | "VOIDED";
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -33,7 +27,6 @@ export function SalesHistoryScreen() {
   // filters
   const [outlets, setOutlets] = useState<OutletRecord[]>([]);
   const [outletId, setOutletId] = useState("");
-  const [status, setStatus] = useState<SaleStatus | "ALL">("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
@@ -49,6 +42,7 @@ export function SalesHistoryScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SaleReceipt | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [reprintReceipt, setReprintReceipt] = useState<SaleReceipt | null>(null);
 
   // void
   const [voidReason, setVoidReason] = useState("");
@@ -70,7 +64,6 @@ export function SalesHistoryScreen() {
         page,
         limit: LIMIT,
         ...(outletId && { outletId }),
-        ...(status !== "ALL" && { status }),
         ...(fromDate && { fromDate: new Date(fromDate).toISOString() }),
         ...(toDate && { toDate: new Date(`${toDate}T23:59:59`).toISOString() }),
       };
@@ -82,7 +75,7 @@ export function SalesHistoryScreen() {
     } finally {
       setLoading(false);
     }
-  }, [outletId, status, fromDate, toDate, page]);
+  }, [outletId, fromDate, toDate, page]);
 
   useEffect(() => { void loadSales(); }, [loadSales]);
 
@@ -144,15 +137,6 @@ export function SalesHistoryScreen() {
                 <option key={o.id} value={o.id}>{o.name}</option>
               ))}
             </select>
-            <select
-              value={status}
-              onChange={(e) => { setStatus(e.target.value as SaleStatus | "ALL"); setPage(1); }}
-              className="rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none"
-            >
-              <option value="ALL">All statuses</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="VOIDED">Voided</option>
-            </select>
             <input
               type="date"
               value={fromDate}
@@ -191,7 +175,6 @@ export function SalesHistoryScreen() {
                     <th className="px-4 py-3">Cashier</th>
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3 text-right">Total</th>
-                    <th className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
@@ -207,11 +190,6 @@ export function SalesHistoryScreen() {
                       <td className="px-4 py-3">{sale.cashier.fullName}</td>
                       <td className="px-4 py-3 text-muted">{sale.customer?.name ?? "—"}</td>
                       <td className="px-4 py-3 text-right font-semibold">{money(sale.total)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[sale.status] ?? ""}`}>
-                          {sale.status}
-                        </span>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -262,9 +240,15 @@ export function SalesHistoryScreen() {
                     <p className="font-mono text-xs text-muted">{detail.receiptNo}</p>
                     <p className="mt-0.5 text-xs text-muted">{DATE_FMT(detail.createdAt)}</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[detail.status] ?? ""}`}>
-                    {detail.status}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setReprintReceipt(detail)}
+                      className="rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface"
+                    >
+                      Reprint Bill
+                    </button>
+                  </div>
                 </div>
 
                 {/* Meta */}
@@ -356,6 +340,11 @@ export function SalesHistoryScreen() {
           </div>
         )}
       </aside>
+
+      <ReceiptModal
+        receipt={reprintReceipt}
+        onClose={() => setReprintReceipt(null)}
+      />
     </div>
   );
 }

@@ -484,6 +484,8 @@ model RepairPart {
   quantity  Int
   unitCost  Decimal @map("unit_cost") @db.Decimal(12, 2)   // cost price locked at time of use
   subtotal  Decimal @db.Decimal(12, 2)                      // unitCost * qty
+  discount  Decimal @default(0) @db.Decimal(12, 2)          // discount amount for this part
+  used      Boolean @default(true)                           // whether the part was actually used/consumed
 
   repairId  String  @map("repair_id") @db.VarChar(36)
   repair    RepairJob @relation(fields: [repairId], references: [id], onDelete: Cascade)

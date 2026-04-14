@@ -12,6 +12,9 @@ import {
 	repairPartParamSchema,
 	updateRepairJobSchema,
 	updateStatusSchema,
+	updatePartDiscountSchema,
+	updatePartQuantitySchema,
+	updatePartUsedSchema,
 } from './repair.schema';
 import * as ctrl from './repair.controller';
 
@@ -38,6 +41,9 @@ router.post('/:id/status', authorize('repairs:update'), validateRequest({ params
 // ---------------------------------------------------------------------------
 router.post('/:id/parts', authorize('repairs:update'), validateRequest({ params: repairIdParamSchema, body: addPartSchema }), ctrl.addPart);
 router.delete('/:id/parts/:partId', authorize('repairs:update'), validateRequest({ params: repairPartParamSchema }), ctrl.removePart);
+router.patch('/:id/parts/:partId/discount', authorize('repairs:update'), validateRequest({ params: repairPartParamSchema, body: updatePartDiscountSchema }), ctrl.updatePartDiscount);
+router.patch('/:id/parts/:partId/quantity', authorize('repairs:update'), validateRequest({ params: repairPartParamSchema, body: updatePartQuantitySchema }), ctrl.updatePartQuantity);
+router.patch('/:id/parts/:partId/used', authorize('repairs:update'), validateRequest({ params: repairPartParamSchema, body: updatePartUsedSchema }), ctrl.updatePartUsed);
 
 // ---------------------------------------------------------------------------
 // Advance payments

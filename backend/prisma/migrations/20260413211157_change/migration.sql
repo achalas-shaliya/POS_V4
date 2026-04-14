@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `repair_parts` MODIFY `used` BOOLEAN NOT NULL DEFAULT true;

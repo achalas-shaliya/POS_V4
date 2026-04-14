@@ -150,7 +150,7 @@ export const recalcTotalCostInTx = async (tx: Tx, repairId: string) => {
     select: { laborCost: true },
   });
   const agg = await tx.repairPart.aggregate({
-    where: { repairId },
+    where: { repairId, used: true },
     _sum: { subtotal: true },
   });
   const partsCost = Number(agg._sum.subtotal ?? 0);
@@ -222,6 +222,24 @@ export const findPartById = (id: string) =>
 
 export const removePartInTx = (tx: Tx, id: string) =>
   tx.repairPart.delete({ where: { id } });
+
+export const updatePartDiscountInTx = (tx: Tx, id: string, discount: number) =>
+  tx.repairPart.update({
+    where: { id },
+    data: { discount },
+  });
+
+export const updatePartQuantityInTx = (tx: Tx, id: string, quantity: number) =>
+  tx.repairPart.update({
+    where: { id },
+    data: { quantity },
+  });
+
+export const updatePartUsedInTx = (tx: Tx, id: string, used: boolean) =>
+  tx.repairPart.update({
+    where: { id },
+    data: { used },
+  });
 
 // ---------------------------------------------------------------------------
 // Payments (replaces advances)

@@ -107,6 +107,18 @@ export const repairPartParamSchema = z.object({
   partId: z.string().uuid(),
 });
 
+export const updatePartDiscountSchema = z.object({
+  discount: z.number().nonnegative().default(0),
+});
+
+export const updatePartQuantitySchema = z.object({
+  quantity: z.number().int().positive(),
+});
+
+export const updatePartUsedSchema = z.object({
+  used: z.boolean(),
+});
+
 export const repairJobNoParamSchema = z.object({
   jobNo: z.string().min(1).max(100),
 });
@@ -120,3 +132,6 @@ export type UpdateRepairStatusInput = z.infer<typeof updateStatusSchema>;
 export type AddPartInput = z.infer<typeof addPartSchema>;
 export type AddAdvanceInput = z.infer<typeof addAdvanceSchema>;
 export type ListRepairJobsInput = z.infer<typeof listRepairJobsSchema>;
+export type UpdatePartDiscountInput = z.infer<typeof updatePartDiscountSchema>;
+export type UpdatePartQuantityInput = z.infer<typeof updatePartQuantitySchema>;
+export type UpdatePartUsedInput = z.infer<typeof updatePartUsedSchema>;

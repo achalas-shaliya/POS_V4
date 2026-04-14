@@ -8,11 +8,19 @@ import {
   addPartSchema,
   addAdvanceSchema,
   listRepairJobsSchema,
+  updatePartDiscountSchema,
   type CreateRepairJobInput,
   type UpdateRepairJobInput,
   type UpdateRepairStatusInput,
   type AddPartInput,
   type AddAdvanceInput,
+  type UpdatePartDiscountInput,
+} from './repair.schema';
+import {
+  updatePartQuantitySchema,
+  updatePartUsedSchema,
+  type UpdatePartQuantityInput,
+  type UpdatePartUsedInput,
 } from './repair.schema';
 import type { AuthenticatedRequest } from '../../shared/types';
 
@@ -123,6 +131,42 @@ export const removePart = async (
   try {
     await svc.removePart(req.params.partId as string, req.user!.id);
     sendSuccess(res, null, 'Part removed and stock restored');
+  } catch (err) { next(err); }
+};
+
+export const updatePartDiscount = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = updatePartDiscountSchema.parse(req.body);
+    const job = await svc.updatePartDiscount(req.params.partId as string, input as UpdatePartDiscountInput, req.params.id as string);
+    sendSuccess(res, job, 'Part discount updated');
+  } catch (err) { next(err); }
+};
+
+export const updatePartQuantity = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = updatePartQuantitySchema.parse(req.body);
+    const job = await svc.updatePartQuantity(req.params.partId as string, input as UpdatePartQuantityInput, req.params.id as string);
+    sendSuccess(res, job, 'Part quantity updated');
+  } catch (err) { next(err); }
+};
+
+export const updatePartUsed = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = updatePartUsedSchema.parse(req.body);
+    const job = await svc.updatePartUsed(req.params.partId as string, input as UpdatePartUsedInput, req.params.id as string);
+    sendSuccess(res, job, 'Part used status updated');
   } catch (err) { next(err); }
 };
 

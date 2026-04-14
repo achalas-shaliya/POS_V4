@@ -189,6 +189,8 @@ export type RepairJobDetail = RepairJobSummary & {
     itemId: string;
     quantity: number;
     unitCost: number | string;
+    discount: number | string;
+    used: boolean;
     subtotal: number | string;
     item: { id: string; sku: string; name: string };
   }>;
@@ -708,6 +710,14 @@ export const api = {
     request<RepairJobDetail>(`/repairs/${id}/status`, { method: "POST", body: JSON.stringify(payload) }),
   addRepairPart: (id: string, payload: { itemId: string; quantity: number; unitCost?: number }) =>
     request(`/repairs/${id}/parts`, { method: "POST", body: JSON.stringify(payload) }),
+  removeRepairPart: (jobId: string, partId: string) =>
+    request<RepairJobDetail>(`/repairs/${jobId}/parts/${partId}`, { method: "DELETE" }),
+  updateRepairPartDiscount: (jobId: string, partId: string, payload: { discount: number }) =>
+    request<RepairJobDetail>(`/repairs/${jobId}/parts/${partId}/discount`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateRepairPartQuantity: (jobId: string, partId: string, payload: { quantity: number }) =>
+    request<RepairJobDetail>(`/repairs/${jobId}/parts/${partId}/quantity`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateRepairPartUsed: (jobId: string, partId: string, payload: { used: boolean }) =>
+    request<RepairJobDetail>(`/repairs/${jobId}/parts/${partId}/used`, { method: "PATCH", body: JSON.stringify(payload) }),
   addRepairAdvance: (id: string, payload: { amount: number; method: "CASH" | "CARD"; reference?: string; note?: string }) =>
     request(`/repairs/${id}/advances`, { method: "POST", body: JSON.stringify(payload) }),
 

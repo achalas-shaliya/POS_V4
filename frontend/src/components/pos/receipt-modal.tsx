@@ -6,6 +6,11 @@ import JsBarcode from "jsbarcode";
 import type { SaleReceipt } from "@/lib/api";
 
 const money = (v: number | string) => `Rs. ${Number(v).toFixed(2)}`;
+const THERMAL_ROLL_WIDTH_MM = 80;
+const THERMAL_PRINTABLE_WIDTH_MM = 72.1;
+const RECEIPT_PRINT_FONT_SIZE_PX = 12.5;
+const RECEIPT_BOTTOM_TEAR_SPACE_MM = 45;
+const RECEIPT_PRINT_FALLBACK_FEED_MM = 8;
 
 interface ReceiptModalProps {
   receipt: SaleReceipt | null;
@@ -34,10 +39,16 @@ export function ReceiptModal({ receipt, onClose }: ReceiptModalProps) {
     <>
       {/* ── Print styles injected once ── */}
       <style>{`
+        @page {
+          size: ${THERMAL_ROLL_WIDTH_MM}mm auto;
+          margin: 0;
+        }
         @media print {
           body > *:not(#pos-receipt-print) { display: none !important; }
           #pos-receipt-print { display: block !important; }
           #pos-receipt-print * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          #pos-receipt-print::after { content: ""; display: block; height: ${RECEIPT_PRINT_FALLBACK_FEED_MM}mm; }
+          html, body { width: ${THERMAL_ROLL_WIDTH_MM}mm; margin: 0; padding: 0; }
         }
         #pos-receipt-print { display: none; }
       `}</style>
@@ -84,7 +95,18 @@ export function ReceiptModal({ receipt, onClose }: ReceiptModalProps) {
 
       {/* ── Print-only version — portalled to <body> so print CSS can isolate it ── */}
       {mounted && createPortal(
-        <div id="pos-receipt-print" style={{ fontFamily: "monospace", fontSize: "11px", width: "80mm", color: "#000" }}>
+        <div
+          id="pos-receipt-print"
+          style={{
+            fontFamily: "monospace",
+            fontSize: `${RECEIPT_PRINT_FONT_SIZE_PX}px`,
+            width: `${THERMAL_PRINTABLE_WIDTH_MM}mm`,
+            color: "#000",
+            margin: "0 auto",
+            padding: "2mm 0",
+            boxSizing: "border-box",
+          }}
+        >
           <ReceiptBody receipt={receipt} totalDiscount={totalDiscount} totalCashPaid={totalCashPaid} totalChange={totalChange} />
         </div>,
         document.body,
@@ -192,6 +214,8 @@ function ReceiptBody({
       <Barcode value={receipt.receiptNo} />
       <Divider />
       <p className="text-center text-gray-400">Thank you for your purchase!</p>
+      <div className="border-t-2 border-dashed border-black" />
+      {/* <FeedSpacer heightMm={RECEIPT_BOTTOM_TEAR_SPACE_MM} /> */}
     </div>
   );
 }
@@ -217,6 +241,21 @@ function Barcode({ value }: { value: string }) {
 
 function Divider() {
   return <div className="border-t border-dashed border-gray-400" />;
+}
+
+function FeedSpacer({ heightMm }: { heightMm: number }) {
+  return (
+    <div
+      style={{
+        height: `${heightMm}mm`,
+        width: "100%",
+        backgroundImage: "radial-gradient(circle, #000 0.16mm, transparent 0.2mm)",
+        backgroundSize: "100% 6mm",
+        backgroundPosition: "left top",
+        backgroundRepeat: "repeat-y",
+      }}
+    />
+  );
 }
 
 function Row({ label, value, className }: { label: string; value: string; className?: string }) {

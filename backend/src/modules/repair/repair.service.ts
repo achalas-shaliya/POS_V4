@@ -14,6 +14,9 @@ import type {
   AddPartInput,
   AddAdvanceInput,
   ListRepairJobsInput,
+  UpdatePartDiscountInput,
+  UpdatePartQuantityInput,
+  UpdatePartUsedInput,
 } from './repair.schema';
 
 // ---------------------------------------------------------------------------
@@ -294,6 +297,111 @@ export const removePart = async (partId: string, userId: string) => {
     outletId: job.outletId,
     action: 'PART_REMOVED',
   });
+};
+
+// ---------------------------------------------------------------------------
+// Update a repair part discount amount
+// ---------------------------------------------------------------------------
+export const updatePartDiscount = async (
+  partId: string,
+  input: UpdatePartDiscountInput,
+  repairId: string,
+) => {
+  const part = await repo.findPartById(partId);
+  if (!part) throw notFound('Repair part');
+
+  const job = part.repair;
+  if (
+    job.status === RepairStatus.DONE ||
+    job.status === RepairStatus.DELIVERED ||
+    job.status === RepairStatus.CANCELLED
+  ) {
+    throw new AppError('Cannot update parts in a finished or cancelled repair', 400);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await repo.updatePartDiscountInTx(tx, partId, input.discount);
+    await repo.recalcTotalCostInTx(tx, job.id);
+  });
+
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'UPDATED',
+  });
+
+  return repo.findJobById(job.id);
+};
+
+// ---------------------------------------------------------------------------
+// Update a repair part quantity
+// ---------------------------------------------------------------------------
+export const updatePartQuantity = async (
+  partId: string,
+  input: UpdatePartQuantityInput,
+  repairId: string,
+) => {
+  const part = await repo.findPartById(partId);
+  if (!part) throw notFound('Repair part');
+
+  const job = part.repair;
+  if (
+    job.status === RepairStatus.DONE ||
+    job.status === RepairStatus.DELIVERED ||
+    job.status === RepairStatus.CANCELLED
+  ) {
+    throw new AppError('Cannot update parts in a finished or cancelled repair', 400);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await repo.updatePartQuantityInTx(tx, partId, input.quantity);
+    await repo.recalcTotalCostInTx(tx, job.id);
+  });
+
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'UPDATED',
+  });
+
+  return repo.findJobById(job.id);
+};
+
+// ---------------------------------------------------------------------------
+// Update a repair part used status
+// ---------------------------------------------------------------------------
+export const updatePartUsed = async (
+  partId: string,
+  input: UpdatePartUsedInput,
+  repairId: string,
+) => {
+  const part = await repo.findPartById(partId);
+  if (!part) throw notFound('Repair part');
+
+  const job = part.repair;
+  if (
+    job.status === RepairStatus.DONE ||
+    job.status === RepairStatus.DELIVERED ||
+    job.status === RepairStatus.CANCELLED
+  ) {
+    throw new AppError('Cannot update parts in a finished or cancelled repair', 400);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await repo.updatePartUsedInTx(tx, partId, input.used);
+    await repo.recalcTotalCostInTx(tx, job.id);
+  });
+
+  notifyRepairJobChanged({
+    repairId: job.id,
+    jobNo: job.jobNo,
+    outletId: job.outletId,
+    action: 'UPDATED',
+  });
+
+  return repo.findJobById(job.id);
 };
 
 // ---------------------------------------------------------------------------
