@@ -8,7 +8,9 @@ import {
   type CategoryRecord,
   type ItemRecord,
   type OutletRecord,
+  type ReturnStockRow,
   type StockRow,
+  type SupplierReturnRecord,
   type WarehouseRecord,
 } from "@/lib/api";
 import { useBarcodeScanner } from "@/lib/use-barcode-scanner";
@@ -129,10 +131,21 @@ export function InventoryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [tablePage, setTablePage] = useState(1);
-  const [activeTab, setActiveTab] = useState<"stock" | "category" | "brand" | "restock">("stock");
+  const [activeTab, setActiveTab] = useState<"return-stock" | "stock" | "category" | "brand" | "restock">("stock");
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
   const stockSearchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [returnStockRows, setReturnStockRows] = useState<ReturnStockRow[]>([]);
+  const [supplierReturns, setSupplierReturns] = useState<SupplierReturnRecord[]>([]);
+  const [returnStockLoading, setReturnStockLoading] = useState(false);
+  const [returnStockError, setReturnStockError] = useState<string | null>(null);
+  const [supplierOutletId, setSupplierOutletId] = useState("");
+  const [supplierItemId, setSupplierItemId] = useState("");
+  const [supplierQty, setSupplierQty] = useState("1");
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierNote, setSupplierNote] = useState("");
+  const [supplierSubmitting, setSupplierSubmitting] = useState(false);
 
   // Restock — bulk batch
   type RestockMode = "purchase" | "adjust" | "transfer";
@@ -195,6 +208,23 @@ export function InventoryScreen() {
     setRows(nextRows);
   };
 
+  const loadReturnStockViews = useCallback(async () => {
+    setReturnStockLoading(true);
+    setReturnStockError(null);
+    try {
+      const [stockData, supplierData] = await Promise.all([
+        api.getReturnStock(),
+        api.listSupplierReturns({ page: 1, limit: 100 }),
+      ]);
+      setReturnStockRows(stockData);
+      setSupplierReturns(supplierData.data);
+    } catch (err) {
+      setReturnStockError(err instanceof Error ? err.message : "Failed to load return stock data");
+    } finally {
+      setReturnStockLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const bootstrap = async () => {
       if (!sessionKey) {
@@ -214,6 +244,8 @@ export function InventoryScreen() {
         setWarehouses(warehouseData);
         setOutlets(outletData);
         setItems(itemData.data);
+        setSupplierOutletId((current) => current || outletData[0]?.id || "");
+        setSupplierItemId((current) => current || itemData.data[0]?.id || "");
         setCategories(categoryData);
         setBrands(brandData);
         setCreateItemForm((current) => ({
@@ -232,6 +264,11 @@ export function InventoryScreen() {
 
     void bootstrap();
   }, [sessionKey]);
+
+  useEffect(() => {
+    if (!sessionKey) return;
+    void loadReturnStockViews();
+  }, [sessionKey, loadReturnStockViews]);
 
   const filteredRows = rows.filter((row) => {
     const matchesWarehouse = warehouseFilter === "ALL" || row.locationName === warehouseFilter;
@@ -533,6 +570,42 @@ export function InventoryScreen() {
     setAddQty("");
   };
 
+  const submitSupplierReturn = async () => {
+    if (!supplierOutletId || !supplierItemId || Number(supplierQty) <= 0) return;
+
+    setSupplierSubmitting(true);
+    setError(null);
+    try {
+      await api.createSupplierReturn({
+        outletId: supplierOutletId,
+        itemId: supplierItemId,
+        quantity: Number(supplierQty),
+        supplierName: supplierName.trim() || undefined,
+        note: supplierNote.trim() || undefined,
+      });
+
+      setSupplierQty("1");
+      setSupplierName("");
+      setSupplierNote("");
+      setMessage("Item returned to supplier and stock updated.");
+
+      const [warehouseData, outletData] = await Promise.all([
+        api.listWarehouses(),
+        api.listOutlets(),
+      ]);
+      setWarehouses(warehouseData);
+      setOutlets(outletData);
+      await loadStock(warehouseData, outletData);
+      await loadReturnStockViews();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to return item to supplier");
+    } finally {
+      setSupplierSubmitting(false);
+    }
+  };
+
+  const canManageReturnStock = session?.user?.permissions?.includes("returns:update") ?? false;
+
   if (!session) {
     return (
       <div className="rounded-[28px] border border-line bg-white p-8">
@@ -575,6 +648,13 @@ export function InventoryScreen() {
         <div className="flex rounded-2xl border border-line bg-surface p-1 gap-1">
           <button
             type="button"
+            onClick={() => setActiveTab("return-stock")}
+            className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${activeTab === "return-stock" ? "bg-white shadow-sm text-ink" : "text-muted hover:text-ink"}`}
+          >
+            Return Stock {returnStockRows.length > 0 && <span className="ml-1 rounded-full bg-brand/10 px-1.5 py-0.5 text-xs text-brand">{returnStockRows.length}</span>}
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("stock")}
             className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${activeTab === "stock" ? "bg-white shadow-sm text-ink" : "text-muted hover:text-ink"}`}
           >
@@ -603,6 +683,157 @@ export function InventoryScreen() {
           </button>
         </div>
       </div>
+
+      {/* Tab: Return Stock */}
+      {activeTab === "return-stock" && (
+        <div className="xl:flex-1 xl:flex xl:flex-col xl:min-h-0">
+          <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:flex-1 xl:min-h-0 xl:items-stretch">
+            <div className="space-y-5 xl:overflow-y-auto">
+              <div className="rounded-[28px] border border-line bg-white p-5">
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Return stock</p>
+                <h3 className="mt-1 text-xl font-bold">Shop-wise remaining return stock</h3>
+                <div className="mt-4 overflow-hidden rounded-[20px] border border-line">
+                  {returnStockLoading ? (
+                    <p className="p-6 text-sm text-muted">Loading return stock...</p>
+                  ) : returnStockRows.length === 0 ? (
+                    <p className="p-6 text-sm text-muted">No return stock records found.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-line text-sm">
+                        <thead className="bg-surface text-left text-muted">
+                          <tr>
+                            <th className="px-4 py-3 font-medium">Outlet</th>
+                            <th className="px-4 py-3 font-medium">Item</th>
+                            <th className="px-4 py-3 font-medium">Returned In</th>
+                            <th className="px-4 py-3 font-medium">To Supplier</th>
+                            <th className="px-4 py-3 font-medium">Remaining</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line bg-white">
+                          {returnStockRows.map((row) => (
+                            <tr key={`${row.outletId}:${row.item.id}`}>
+                              <td className="px-4 py-3">{row.outletName}</td>
+                              <td className="px-4 py-3">
+                                <p className="font-medium text-ink">{row.item.name}</p>
+                                <p className="font-mono text-xs text-muted">{row.item.sku}</p>
+                              </td>
+                              <td className="px-4 py-3">{row.returnedInQty}</td>
+                              <td className="px-4 py-3">{row.returnedToSupplierQty}</td>
+                              <td className="px-4 py-3 font-semibold text-brand">{row.remainingReturnQty}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-line bg-white p-5">
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Supplier returns</p>
+                <h3 className="mt-1 text-xl font-bold">Items returned to supplier</h3>
+                <div className="mt-4 overflow-hidden rounded-[20px] border border-line">
+                  {returnStockLoading ? (
+                    <p className="p-6 text-sm text-muted">Loading supplier returns...</p>
+                  ) : supplierReturns.length === 0 ? (
+                    <p className="p-6 text-sm text-muted">No supplier returns recorded yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-line text-sm">
+                        <thead className="bg-surface text-left text-muted">
+                          <tr>
+                            <th className="px-4 py-3 font-medium">Date</th>
+                            <th className="px-4 py-3 font-medium">Outlet</th>
+                            <th className="px-4 py-3 font-medium">Item</th>
+                            <th className="px-4 py-3 font-medium">Qty</th>
+                            <th className="px-4 py-3 font-medium">Supplier</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line bg-white">
+                          {supplierReturns.map((row) => (
+                            <tr key={row.id}>
+                              <td className="px-4 py-3 text-xs text-muted">{new Date(row.createdAt).toLocaleDateString("en-GB")}</td>
+                              <td className="px-4 py-3">{row.outlet?.name ?? "-"}</td>
+                              <td className="px-4 py-3">
+                                <p className="font-medium text-ink">{row.item.name}</p>
+                                <p className="font-mono text-xs text-muted">{row.item.sku}</p>
+                              </td>
+                              <td className="px-4 py-3 font-semibold">{row.quantity}</td>
+                              <td className="px-4 py-3">{row.supplierName ?? "Unknown"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {returnStockError && (
+                <p className="text-sm font-medium text-rose-600">{returnStockError}</p>
+              )}
+            </div>
+
+            <div className="rounded-[28px] border border-line bg-white p-5 xl:overflow-y-auto">
+              <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Supplier actions</p>
+              <h3 className="mt-1 text-xl font-bold">Return item to supplier</h3>
+              {canManageReturnStock ? (
+                <div className="mt-5 space-y-3">
+                  <select
+                    value={supplierOutletId}
+                    onChange={(e) => setSupplierOutletId(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  >
+                    {outlets.map((o) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={supplierItemId}
+                    onChange={(e) => setSupplierItemId(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  >
+                    {items.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name} ({item.sku})</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    value={supplierQty}
+                    onChange={(e) => setSupplierQty(e.target.value)}
+                    placeholder="Quantity"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  />
+                  <input
+                    value={supplierName}
+                    onChange={(e) => setSupplierName(e.target.value)}
+                    placeholder="Supplier name (optional)"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  />
+                  <textarea
+                    value={supplierNote}
+                    onChange={(e) => setSupplierNote(e.target.value)}
+                    rows={3}
+                    placeholder="Note (optional)"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={submitSupplierReturn}
+                    disabled={supplierSubmitting || !supplierOutletId || !supplierItemId || Number(supplierQty) <= 0}
+                    className="btn-primary w-full disabled:opacity-50"
+                  >
+                    {supplierSubmitting ? "Saving..." : "Return to supplier"}
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted">You do not have permission to post supplier returns.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab: Stock */}
       {activeTab === "stock" && (

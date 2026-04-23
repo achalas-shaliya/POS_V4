@@ -7,6 +7,9 @@ import {
   approveReturnSchema,
   rejectReturnSchema,
   listReturnsSchema,
+  createSupplierReturnSchema,
+  listSupplierReturnsSchema,
+  listReturnStockSchema,
 } from './returns.schema';
 
 const pid = (req: Request) => req.params.id as string;
@@ -78,5 +81,41 @@ export const rejectReturn = async (
     const input = rejectReturnSchema.parse(req.body);
     const data  = await service.rejectReturn(pid(req), input, req.user!.id);
     sendSuccess(res, data, 'Return rejected');
+  } catch (err) { next(err); }
+};
+
+export const createSupplierReturn = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = createSupplierReturnSchema.parse(req.body);
+    const data = await service.createSupplierReturn(input, req.user!.id);
+    sendCreated(res, data, 'Returned to supplier and stock updated');
+  } catch (err) { next(err); }
+};
+
+export const listSupplierReturns = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = listSupplierReturnsSchema.parse(req.query);
+    const result = await service.listSupplierReturns(input);
+    sendPaginated(res, result.data, { total: result.total, page: result.page, limit: result.limit });
+  } catch (err) { next(err); }
+};
+
+export const listReturnStock = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const input = listReturnStockSchema.parse(req.query);
+    const data = await service.listReturnStock(input);
+    sendSuccess(res, data);
   } catch (err) { next(err); }
 };

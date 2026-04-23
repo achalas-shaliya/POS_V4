@@ -4,6 +4,7 @@ import { ReturnStatus, ReturnReason } from '../../generated/prisma/enums';
 import type { ListReturnsInput } from './returns.schema';
 
 type Tx = Prisma.TransactionClient;
+export const SUPPLIER_RETURN_NOTE_PREFIX = 'SUPPLIER_RETURN';
 
 // ---------------------------------------------------------------------------
 // Shared include shapes
@@ -135,3 +136,45 @@ export const rejectReturnInTx = (
       ...(note && { note }),
     },
   });
+
+export const listSupplierReturns = (
+  skip: number,
+  take: number,
+  filters: {
+    outletId?: string;
+    itemId?: string;
+    fromDate?: string;
+    toDate?: string;
+  },
+) => {
+  const where: Prisma.StockMovementWhereInput = {
+    movementType: 'RETURN',
+    fromType: 'OUTLET',
+    toType: null,
+    note: {
+      startsWith: SUPPLIER_RETURN_NOTE_PREFIX,
+    },
+    ...(filters.outletId && { fromId: filters.outletId }),
+    ...(filters.itemId && { itemId: filters.itemId }),
+    ...((filters.fromDate || filters.toDate) && {
+      createdAt: {
+        ...(filters.fromDate && { gte: new Date(filters.fromDate) }),
+        ...(filters.toDate && { lte: new Date(filters.toDate) }),
+      },
+    }),
+  };
+
+  return prisma.$transaction([
+    prisma.stockMovement.findMany({
+      where,
+      skip,
+      take,
+      include: {
+        item: { select: { id: true, sku: true, name: true } },
+        createdByUser: { select: { id: true, fullName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.stockMovement.count({ where }),
+  ]);
+};

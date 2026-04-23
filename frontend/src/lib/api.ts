@@ -245,6 +245,28 @@ export type ReturnDetail = {
   }>;
 };
 
+export type ReturnStockRow = {
+  outletId: string;
+  outletName: string;
+  item: { id: string; sku: string; name: string };
+  returnedInQty: number;
+  returnedToSupplierQty: number;
+  remainingReturnQty: number;
+  lastIncomingAt: string | null;
+  lastOutgoingAt: string | null;
+};
+
+export type SupplierReturnRecord = {
+  id: string;
+  createdAt: string;
+  quantity: number;
+  outlet: { id: string; name: string } | null;
+  item: { id: string; sku: string; name: string };
+  createdByUser: { id: string; fullName: string } | null;
+  supplierName: string | null;
+  note: string | null;
+};
+
 export type TransferRecord = {
   id: string;
   transferNo: string;
@@ -685,6 +707,12 @@ export const api = {
     request<ReturnDetail>(`/returns/${id}/approve`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
   rejectReturn: (id: string, payload?: { note?: string }) =>
     request<ReturnDetail>(`/returns/${id}/reject`, { method: "POST", body: JSON.stringify(payload ?? {}) }),
+  getReturnStock: (params?: { outletId?: string; itemId?: string }) =>
+    request<ReturnStockRow[]>(`/returns/stock${buildQuery(params)}`),
+  listSupplierReturns: (params?: { page?: number; limit?: number; outletId?: string; itemId?: string; fromDate?: string; toDate?: string }) =>
+    requestPaginated<SupplierReturnRecord>("/returns/supplier-returns", { page: 1, limit: 100, ...params }),
+  createSupplierReturn: (payload: { outletId: string; itemId: string; quantity: number; supplierName?: string; note?: string }) =>
+    request<SupplierReturnRecord>("/returns/supplier-returns", { method: "POST", body: JSON.stringify(payload) }),
 
   listRepairJobs: (params?: {
     page?: number;

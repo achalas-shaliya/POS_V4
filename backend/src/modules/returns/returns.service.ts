@@ -9,7 +9,12 @@ import type {
   ApproveReturnInput,
   RejectReturnInput,
   ListReturnsInput,
+  CreateSupplierReturnInput,
+  ListSupplierReturnsInput,
+  ListReturnStockInput,
 } from './returns.schema';
+
+const CUSTOMER_RETURN_NOTE_PREFIX = 'Return RET-';
 
 // ---------------------------------------------------------------------------
 // Return number generator — RET-YYYYMMDD-XXXXXX
@@ -188,4 +193,214 @@ export const listReturns = async (input: ListReturnsInput) => {
     toDate:   input.toDate,
   });
   return { data, total, page: input.page, limit: input.limit };
+};
+
+const buildSupplierReturnNote = (supplierName?: string, note?: string) => {
+  const supplier = supplierName?.trim() ? `supplier=${supplierName.trim()}` : 'supplier=unknown';
+  const extra = note?.trim() ? ` | note=${note.trim()}` : '';
+  return `${repo.SUPPLIER_RETURN_NOTE_PREFIX}:${supplier}${extra}`;
+};
+
+const parseSupplierReturnNote = (note?: string | null) => {
+  if (!note || !note.startsWith(repo.SUPPLIER_RETURN_NOTE_PREFIX)) {
+    return { supplierName: null as string | null, note: null as string | null };
+  }
+
+  const body = note.slice(repo.SUPPLIER_RETURN_NOTE_PREFIX.length + 1);
+  const parts = body.split('|').map((p) => p.trim());
+  const supplierPart = parts.find((p) => p.startsWith('supplier='));
+  const notePart = parts.find((p) => p.startsWith('note='));
+
+  return {
+    supplierName: supplierPart ? supplierPart.replace(/^supplier=/, '') : null,
+    note: notePart ? notePart.replace(/^note=/, '') : null,
+  };
+};
+
+export const createSupplierReturn = async (input: CreateSupplierReturnInput, userId: string) => {
+  const [outlet, item] = await Promise.all([
+    invRepo.findOutletById(input.outletId),
+    invRepo.findItemById(input.itemId),
+  ]);
+
+  if (!outlet || !outlet.isActive) throw notFound('Outlet');
+  if (!item || !item.isActive) throw notFound('Item');
+
+  const movement = await prisma.$transaction(async (tx) => {
+    const stock = await invRepo.getOutletStockInTx(tx, input.outletId, input.itemId);
+    if (!stock || stock.quantity < input.quantity) {
+      throw new AppError(
+        `Insufficient stock for "${item.name}" at ${outlet.name} (available: ${stock?.quantity ?? 0})`,
+        400,
+      );
+    }
+
+    await invRepo.upsertOutletStock(tx, input.outletId, input.itemId, -input.quantity);
+
+    return invRepo.createMovement(tx, {
+      movementType: MovementType.RETURN,
+      quantity: input.quantity,
+      itemId: input.itemId,
+      fromType: LocationType.OUTLET,
+      fromId: input.outletId,
+      note: buildSupplierReturnNote(input.supplierName, input.note),
+      createdBy: userId,
+    });
+  });
+
+  return {
+    id: movement.id,
+    item: { id: item.id, sku: item.sku, name: item.name },
+    outlet: { id: outlet.id, name: outlet.name },
+    quantity: movement.quantity,
+    supplierName: input.supplierName?.trim() || null,
+    note: input.note?.trim() || null,
+    createdAt: movement.createdAt,
+  };
+};
+
+export const listSupplierReturns = async (input: ListSupplierReturnsInput) => {
+  const { skip, take } = getPaginationArgs(input);
+  const [rows, total] = await repo.listSupplierReturns(skip, take, {
+    outletId: input.outletId,
+    itemId: input.itemId,
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+  });
+
+  const outletIds = Array.from(new Set(rows.map((r) => r.fromId).filter(Boolean))) as string[];
+  const outlets = outletIds.length
+    ? await prisma.outlet.findMany({ where: { id: { in: outletIds } }, select: { id: true, name: true } })
+    : [];
+  const outletMap = new Map(outlets.map((o) => [o.id, o]));
+
+  const data = rows.map((row) => {
+    const parsed = parseSupplierReturnNote(row.note);
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      quantity: row.quantity,
+      outlet: row.fromId
+        ? {
+            id: row.fromId,
+            name: outletMap.get(row.fromId)?.name ?? 'Unknown outlet',
+          }
+        : null,
+      item: row.item,
+      createdByUser: row.createdByUser,
+      supplierName: parsed.supplierName,
+      note: parsed.note,
+    };
+  });
+
+  return { data, total, page: input.page, limit: input.limit };
+};
+
+export const listReturnStock = async (input: ListReturnStockInput) => {
+  const movements = await prisma.stockMovement.findMany({
+    where: {
+      movementType: MovementType.RETURN,
+      ...(input.itemId && { itemId: input.itemId }),
+      OR: [
+        {
+          toType: LocationType.OUTLET,
+          ...(input.outletId && { toId: input.outletId }),
+          note: { startsWith: CUSTOMER_RETURN_NOTE_PREFIX },
+        },
+        {
+          fromType: LocationType.OUTLET,
+          toType: null,
+          ...(input.outletId && { fromId: input.outletId }),
+          note: { startsWith: repo.SUPPLIER_RETURN_NOTE_PREFIX },
+        },
+      ],
+    },
+    include: {
+      item: { select: { id: true, sku: true, name: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const outletIds = Array.from(
+    new Set(
+      movements
+        .flatMap((m) => [m.toType === LocationType.OUTLET ? m.toId : null, m.fromType === LocationType.OUTLET ? m.fromId : null])
+        .filter(Boolean),
+    ),
+  ) as string[];
+
+  const outlets = outletIds.length
+    ? await prisma.outlet.findMany({ where: { id: { in: outletIds } }, select: { id: true, name: true } })
+    : [];
+  const outletMap = new Map(outlets.map((o) => [o.id, o.name]));
+
+  const ledger = new Map<string, {
+    outletId: string;
+    outletName: string;
+    item: { id: string; sku: string; name: string };
+    returnedInQty: number;
+    returnedToSupplierQty: number;
+    lastIncomingAt: string | null;
+    lastOutgoingAt: string | null;
+  }>();
+
+  for (const movement of movements) {
+    let outletId: string | null = null;
+    let direction: 'IN' | 'OUT' | null = null;
+
+    if (
+      movement.toType === LocationType.OUTLET &&
+      movement.toId &&
+      movement.note?.startsWith(CUSTOMER_RETURN_NOTE_PREFIX)
+    ) {
+      outletId = movement.toId;
+      direction = 'IN';
+    }
+
+    if (
+      movement.fromType === LocationType.OUTLET &&
+      movement.fromId &&
+      movement.toType === null &&
+      movement.note?.startsWith(repo.SUPPLIER_RETURN_NOTE_PREFIX)
+    ) {
+      outletId = movement.fromId;
+      direction = 'OUT';
+    }
+
+    if (!outletId || !direction) continue;
+
+    const key = `${outletId}:${movement.itemId}`;
+    const current =
+      ledger.get(key) ??
+      {
+        outletId,
+        outletName: outletMap.get(outletId) ?? 'Unknown outlet',
+        item: movement.item,
+        returnedInQty: 0,
+        returnedToSupplierQty: 0,
+        lastIncomingAt: null,
+        lastOutgoingAt: null,
+      };
+
+    if (direction === 'IN') {
+      current.returnedInQty += movement.quantity;
+      current.lastIncomingAt = movement.createdAt.toISOString();
+    } else {
+      current.returnedToSupplierQty += movement.quantity;
+      current.lastOutgoingAt = movement.createdAt.toISOString();
+    }
+
+    ledger.set(key, current);
+  }
+
+  return Array.from(ledger.values())
+    .map((row) => ({
+      ...row,
+      remainingReturnQty: row.returnedInQty - row.returnedToSupplierQty,
+    }))
+    .filter((row) => row.returnedInQty > 0 || row.returnedToSupplierQty > 0)
+    .sort((a, b) => {
+      if (a.outletName !== b.outletName) return a.outletName.localeCompare(b.outletName);
+      return a.item.name.localeCompare(b.item.name);
+    });
 };

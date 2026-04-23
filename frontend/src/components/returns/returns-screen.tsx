@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   api,
+  type OutletRecord,
   type ReturnDetail,
   type ReturnReason,
   type ReturnStatus,
@@ -44,7 +45,10 @@ export function ReturnsScreen() {
 
   // list
   const [returns, setReturns] = useState<ReturnSummary[]>([]);
+  const [outlets, setOutlets] = useState<OutletRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<ReturnStatus | "ALL">("ALL");
+  const [locationFilter, setLocationFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -90,6 +94,23 @@ export function ReturnsScreen() {
   }, [statusFilter]);
 
   useEffect(() => { void loadReturns(); }, [loadReturns]);
+
+  useEffect(() => {
+    api.listOutlets().then(setOutlets).catch(() => { /* non-critical */ });
+  }, []);
+
+  const filteredReturns = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return returns.filter((r) => {
+      const matchesLocation = locationFilter === "ALL" || r.outlet.id === locationFilter;
+      const matchesSearch = !q ||
+        r.returnNo.toLowerCase().includes(q) ||
+        r.sale.receiptNo.toLowerCase().includes(q) ||
+        r.outlet.name.toLowerCase().includes(q) ||
+        REASON_LABELS[r.reason].toLowerCase().includes(q);
+      return matchesLocation && matchesSearch;
+    });
+  }, [returns, locationFilter, search]);
 
   // ---------------------------------------------------------------------------
   // Load detail
@@ -223,20 +244,41 @@ export function ReturnsScreen() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_420px] xl:items-start">
+    <div className="flex h-full flex-col gap-4">
+      <div>
+        <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Returns</p>
+        <h1 className="mt-1 text-2xl font-bold">Returns &amp; Warranty</h1>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row lg:items-stretch">
       {/* ── Left: list ── */}
-      <section className="space-y-4">
+      <section className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden rounded-[28px] border border-line bg-white p-6">
         {/* Toolbar */}
-        <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Returns &amp; Warranty</p>
-            <h2 className="mt-0.5 text-lg font-bold">Return Requests</h2>
+            <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Requests</p>
+            <h2 className="mt-0.5 text-xl font-bold">Return Requests</h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search return #, receipt, outlet…"
+              className="rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none ring-brand/30 transition focus:ring w-56"
+            />
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none"
+            >
+              <option value="ALL">All locations</option>
+              {outlets.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as ReturnStatus | "ALL")}
-              className="rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none"
+              className="rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none focus:border-brand"
             >
               <option value="ALL">All statuses</option>
               <option value="PENDING">Pending</option>
@@ -261,16 +303,16 @@ export function ReturnsScreen() {
         )}
 
         {/* Table */}
-        <div className="card overflow-hidden p-0">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-[24px] border border-line">
           {loading ? (
             <p className="p-6 text-sm text-muted">Loading returns…</p>
-          ) : returns.length === 0 ? (
+          ) : filteredReturns.length === 0 ? (
             <p className="p-6 text-sm text-muted">No return requests found.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="h-full overflow-x-auto overflow-y-auto">
+              <table className="w-full divide-y divide-line text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-surface text-left text-xs uppercase tracking-[0.12em] text-muted">
+                  <tr className="sticky top-0 bg-white text-left text-xs font-semibold uppercase tracking-wide text-muted">
                     <th className="px-4 py-3">Return #</th>
                     <th className="px-4 py-3">Receipt</th>
                     <th className="px-4 py-3">Outlet</th>
@@ -282,7 +324,7 @@ export function ReturnsScreen() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {returns.map((r) => (
+                  {filteredReturns.map((r) => (
                     <tr
                       key={r.id}
                       onClick={() => openDetail(r.id)}
@@ -307,13 +349,15 @@ export function ReturnsScreen() {
             </div>
           )}
         </div>
+
       </section>
 
       {/* ── Right: detail or new-return panel ── */}
-      <aside className="space-y-4">
+      <aside className="w-full space-y-4 lg:w-[420px]">
+
         {/* ── New Return Form ── */}
         {panelOpen && (
-          <div className="card space-y-4 p-5">
+          <div className="rounded-[28px] border border-line bg-white p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold">New Return / Warranty Claim</h3>
               <button type="button" onClick={closePanelAndReset} className="text-sm text-muted hover:text-ink">✕</button>
@@ -328,7 +372,7 @@ export function ReturnsScreen() {
                   onChange={(e) => setReceiptQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && lookupReceipt()}
                   placeholder="e.g. REC-20260411-000001"
-                  className="flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                  className="flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-brand"
                 />
                 <button
                   type="button"
@@ -402,7 +446,7 @@ export function ReturnsScreen() {
                   <select
                     value={reason}
                     onChange={(e) => setReason(e.target.value as ReturnReason)}
-                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-brand"
                   >
                     {(Object.keys(REASON_LABELS) as ReturnReason[]).map((r) => (
                       <option key={r} value={r}>{REASON_LABELS[r]}</option>
@@ -418,7 +462,7 @@ export function ReturnsScreen() {
                     onChange={(e) => setNote(e.target.value)}
                     rows={2}
                     placeholder="Customer description, serial number, etc."
-                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-brand"
                   />
                 </div>
 
@@ -439,7 +483,7 @@ export function ReturnsScreen() {
 
         {/* ── Detail panel ── */}
         {selectedId && !panelOpen && (
-          <div className="card space-y-4 p-5">
+          <div className="rounded-[28px] border border-line bg-white p-6 space-y-4">
             {detailLoading ? (
               <p className="text-sm text-muted">Loading…</p>
             ) : detail ? (
@@ -495,7 +539,7 @@ export function ReturnsScreen() {
                       onChange={(e) => setActionNote(e.target.value)}
                       rows={2}
                       placeholder="Optional note (visible on record)"
-                      className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+                      className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-brand"
                     />
                     <div className="flex gap-2">
                       <button
@@ -523,12 +567,13 @@ export function ReturnsScreen() {
         )}
 
         {!panelOpen && !selectedId && (
-          <div className="card flex flex-col items-center justify-center gap-2 py-12 text-center">
+          <div className="rounded-[28px] border border-line bg-white p-6 flex flex-col items-center justify-center gap-2 py-12 text-center">
             <p className="text-sm text-muted">Select a return to view details,</p>
             <p className="text-sm text-muted">or click <strong>+ New Return</strong> to raise a request.</p>
           </div>
         )}
       </aside>
+      </div>
     </div>
   );
 }

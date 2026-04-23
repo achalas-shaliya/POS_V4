@@ -5,7 +5,10 @@ import { validateRequest } from '../../shared/middleware/validateRequest';
 import {
 	approveReturnSchema,
 	createReturnSchema,
+	createSupplierReturnSchema,
 	listReturnsSchema,
+	listSupplierReturnsSchema,
+	listReturnStockSchema,
 	rejectReturnSchema,
 	returnIdParamSchema,
 	returnNoParamSchema,
@@ -19,6 +22,11 @@ router.use(authenticate);
 // List / create
 router.get('/', authorize('returns:read'), validateRequest({ query: listReturnsSchema }), ctrl.listReturns);
 router.post('/', authorize('returns:create'), validateRequest({ body: createReturnSchema }), ctrl.createReturn);
+
+// Return stock and supplier-return operations
+router.get('/stock', authorize('returns:read'), validateRequest({ query: listReturnStockSchema }), ctrl.listReturnStock);
+router.get('/supplier-returns', authorize('returns:read'), validateRequest({ query: listSupplierReturnsSchema }), ctrl.listSupplierReturns);
+router.post('/supplier-returns', authorize('returns:update'), validateRequest({ body: createSupplierReturnSchema }), ctrl.createSupplierReturn);
 
 // Lookups
 router.get('/no/:returnNo', authorize('returns:read'), validateRequest({ params: returnNoParamSchema }), ctrl.getReturnByNo);
