@@ -16,6 +16,8 @@ import type {
   SetMinStockInput,
   ListMovementsInput,
   StockFilterInput,
+  CreatePriceTierInput,
+  UpdatePriceTierInput,
 } from './inventory.schema';
 import { getPaginationArgs } from '../../shared/utils/pagination';
 
@@ -165,6 +167,7 @@ export const getOutletStock = async (outletId: string, input: StockFilterInput) 
 
 // ---------------------------------------------------------------------------
 // Stock: Purchase — receive stock from supplier into a warehouse
+// Supports optional price tier: create new tier or add to existing tier.
 // ---------------------------------------------------------------------------
 
 export const purchaseStock = async (data: PurchaseStockInput, userId: string) => {
@@ -175,6 +178,14 @@ export const purchaseStock = async (data: PurchaseStockInput, userId: string) =>
   if (!warehouse) throw notFound('Warehouse');
   if (!item) throw notFound('Item');
   if (!item.isActive) throw new AppError('Item is inactive', 400);
+
+  // Validate tier if provided
+  if (data.tierId) {
+    const tier = await repo.findTierById(data.tierId);
+    if (!tier) throw notFound('Price tier');
+    if (tier.itemId !== data.itemId) throw new AppError('Tier does not belong to this item', 400);
+    if (!tier.isActive) throw new AppError('Price tier is archived', 400);
+  }
 
   await prisma.$transaction(async (tx) => {
     await repo.upsertWarehouseStock(tx, data.warehouseId, data.itemId, data.quantity);
@@ -187,6 +198,24 @@ export const purchaseStock = async (data: PurchaseStockInput, userId: string) =>
       toId: data.warehouseId,
       createdBy: userId,
     });
+
+    // Handle price tier
+    if (data.tierId) {
+      // Add quantity to existing tier
+      await repo.updateTierQuantity(tx, data.tierId, data.quantity);
+    } else if (data.newTier) {
+      // Create a brand-new tier for this batch
+      const costPrice = data.unitCost ?? Number(item.costPrice);
+      await repo.createPriceTier(tx, {
+        itemId: data.itemId,
+        label: data.newTier.label,
+        costPrice,
+        sellingPrice: data.newTier.sellingPrice,
+        discountPrice: data.newTier.discountPrice,
+        quantity: data.quantity,
+        createdById: userId,
+      });
+    }
   });
 };
 
@@ -361,3 +390,52 @@ export const listMovements = async (input: ListMovementsInput) => {
   });
   return { data, total, page: input.page, limit: input.limit };
 };
+
+// ---------------------------------------------------------------------------
+// Price Tiers
+// ---------------------------------------------------------------------------
+
+export const listPriceTiers = async (itemId: string, includeArchived = false) => {
+  const item = await repo.findItemById(itemId);
+  if (!item) throw notFound('Item');
+  return includeArchived
+    ? repo.findAllTiersByItemId(itemId)
+    : repo.findActiveTiersByItemId(itemId);
+};
+
+export const createPriceTier = async (
+  itemId: string,
+  data: CreatePriceTierInput,
+  userId: string,
+) => {
+  const item = await repo.findItemById(itemId);
+  if (!item) throw notFound('Item');
+  if (!item.isActive) throw new AppError('Item is inactive', 400);
+
+  return prisma.$transaction((tx) =>
+    repo.createPriceTier(tx, {
+      itemId,
+      label: data.label,
+      costPrice: data.costPrice,
+      sellingPrice: data.sellingPrice,
+      discountPrice: data.discountPrice,
+      quantity: data.quantity,
+      note: data.note,
+      createdById: userId,
+    }),
+  );
+};
+
+export const updatePriceTier = async (tierId: string, data: UpdatePriceTierInput) => {
+  const tier = await repo.findTierById(tierId);
+  if (!tier) throw notFound('Price tier');
+  return repo.updateTier(tierId, data);
+};
+
+export const archivePriceTier = async (tierId: string) => {
+  const tier = await repo.findTierById(tierId);
+  if (!tier) throw notFound('Price tier');
+  if (!tier.isActive) throw conflict('Price tier is already archived');
+  return repo.archiveTier(tierId);
+};
+

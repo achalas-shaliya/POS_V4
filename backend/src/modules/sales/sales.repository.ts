@@ -96,6 +96,7 @@ export const createSaleInTx = (
       unitPrice: number;
       discount: number;
       subtotal: number;
+      tierId?: string;
     }[];
     payment: {
       txNo: string;

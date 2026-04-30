@@ -71,13 +71,37 @@ export const checkout = async (data: CheckoutInput, userId: string) => {
     throw new AppError('One or more items not found', 404);
   }
 
+  // ── 2b. Resolve tiers from DB (if any line uses a tierId) ──────────────────
+  const tierIds = [...new Set(data.items.map((i) => i.tierId).filter(Boolean) as string[])];
+  const dbTiers = tierIds.length > 0
+    ? await prisma.itemPriceTier.findMany({ where: { id: { in: tierIds } } })
+    : [];
+  const tierMap = new Map(dbTiers.map((t) => [t.id, t]));
+
   // ── 3. Build line items with locked prices ────────────────────────────────
   const lineItems = data.items.map((line) => {
     const dbItem = itemMap.get(line.itemId)!;
     if (!dbItem.isActive) {
       throw new AppError(`Item "${dbItem.name}" is inactive`, 400);
     }
-    const unitPrice = line.unitPrice ?? Number(dbItem.sellingPrice);
+
+    // If a tier is specified, validate it and use its selling price as default
+    let tierSellingPrice: number | undefined;
+    if (line.tierId) {
+      const tier = tierMap.get(line.tierId);
+      if (!tier) throw new AppError(`Price tier not found for item "${dbItem.name}"`, 404);
+      if (tier.itemId !== line.itemId) throw new AppError(`Tier does not belong to item "${dbItem.name}"`, 400);
+      if (!tier.isActive) throw new AppError(`Price tier for "${dbItem.name}" is archived`, 400);
+      if (tier.quantity < line.quantity) {
+        throw new AppError(
+          `Insufficient tier stock for "${dbItem.name}" (tier available: ${tier.quantity})`,
+          400,
+        );
+      }
+      tierSellingPrice = Number(tier.sellingPrice);
+    }
+
+    const unitPrice = line.unitPrice ?? tierSellingPrice ?? Number(dbItem.sellingPrice);
     const discount = line.discount ?? 0;
     if (discount > unitPrice) {
       throw new AppError(
@@ -92,6 +116,7 @@ export const checkout = async (data: CheckoutInput, userId: string) => {
       unitPrice,
       discount,
       subtotal: lineSubtotal,
+      tierId: line.tierId,
     };
   });
 
@@ -140,6 +165,16 @@ export const checkout = async (data: CheckoutInput, userId: string) => {
         );
       }
       await invRepo.upsertOutletStock(tx, data.outletId, line.itemId, -line.quantity);
+
+      // Deduct from tier quantity if a tier was selected
+      if (line.tierId) {
+        await invRepo.updateTierQuantity(tx, line.tierId, -line.quantity);
+        // Auto-archive tier if it reaches zero
+        const updatedTier = await tx.itemPriceTier.findUnique({ where: { id: line.tierId }, select: { quantity: true } });
+        if (updatedTier && updatedTier.quantity <= 0) {
+          await tx.itemPriceTier.update({ where: { id: line.tierId }, data: { isActive: false } });
+        }
+      }
     }
 
     // Persist sale + items + single payment transaction (with per-method legs)

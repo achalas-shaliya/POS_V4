@@ -379,3 +379,85 @@ export const listMovements = (
     prisma.stockMovement.count({ where }),
   ]);
 };
+
+// ---------------------------------------------------------------------------
+// Price Tiers
+// ---------------------------------------------------------------------------
+
+const TIER_INCLUDE = {
+  item: { select: { id: true, sku: true, name: true } },
+  createdBy: { select: { id: true, fullName: true } },
+} satisfies Prisma.ItemPriceTierInclude;
+
+export const findActiveTiersByItemId = (itemId: string) =>
+  prisma.itemPriceTier.findMany({
+    where: { itemId, isActive: true },
+    include: TIER_INCLUDE,
+    orderBy: { createdAt: 'asc' },
+  });
+
+export const findAllTiersByItemId = (itemId: string) =>
+  prisma.itemPriceTier.findMany({
+    where: { itemId },
+    include: TIER_INCLUDE,
+    orderBy: { createdAt: 'asc' },
+  });
+
+export const findTierById = (id: string) =>
+  prisma.itemPriceTier.findUnique({ where: { id }, include: TIER_INCLUDE });
+
+export const createPriceTier = (
+  tx: Tx,
+  data: {
+    itemId: string;
+    label: string;
+    costPrice: number;
+    sellingPrice: number;
+    discountPrice: number;
+    quantity: number;
+    note?: string;
+    createdById: string;
+  },
+) =>
+  tx.itemPriceTier.create({
+    data: {
+      itemId: data.itemId,
+      label: data.label,
+      costPrice: data.costPrice,
+      sellingPrice: data.sellingPrice,
+      discountPrice: data.discountPrice,
+      quantity: data.quantity,
+      note: data.note,
+      createdById: data.createdById,
+    },
+    include: TIER_INCLUDE,
+  });
+
+export const updateTierQuantity = (tx: Tx, tierId: string, increment: number) =>
+  tx.itemPriceTier.update({
+    where: { id: tierId },
+    data: { quantity: { increment } },
+  });
+
+export const updateTier = (
+  id: string,
+  data: { label?: string; sellingPrice?: number; discountPrice?: number; note?: string },
+) =>
+  prisma.itemPriceTier.update({
+    where: { id },
+    data: {
+      ...(data.label !== undefined && { label: data.label }),
+      ...(data.sellingPrice !== undefined && { sellingPrice: data.sellingPrice }),
+      ...(data.discountPrice !== undefined && { discountPrice: data.discountPrice }),
+      ...(data.note !== undefined && { note: data.note }),
+    },
+    include: TIER_INCLUDE,
+  });
+
+export const archiveTier = (id: string) =>
+  prisma.itemPriceTier.update({
+    where: { id },
+    data: { isActive: false },
+    include: TIER_INCLUDE,
+  });
+

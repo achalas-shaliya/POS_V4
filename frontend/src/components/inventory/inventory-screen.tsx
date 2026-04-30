@@ -117,6 +117,15 @@ export function InventoryScreen() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemForm, setEditItemForm] = useState<CreateItemForm>(EMPTY_CREATE_ITEM_FORM);
   const [savingEdit, setSavingEdit] = useState(false);
+  // Tier management (for edit item panel)
+  const [editItemTiers, setEditItemTiers] = useState<import("@/lib/api").PriceTierRecord[]>([]);
+  const [tiersLoading, setTiersLoading] = useState(false);
+  const [showAllTiers, setShowAllTiers] = useState(false);
+  const [editingTierId, setEditingTierId] = useState<string | null>(null);
+  const [editTierForm, setEditTierForm] = useState({ label: "", sellingPrice: "", discountPrice: "", note: "" });
+  const [savingTier, setSavingTier] = useState(false);
+  const [showNewTierForm, setShowNewTierForm] = useState(false);
+  const [newTierForm, setNewTierForm] = useState({ label: "", costPrice: "", sellingPrice: "", discountPrice: "", quantity: "", note: "" });
   // Min-stock editing (map of rowId → input value)
   const [minValues, setMinValues] = useState<Record<string, string>>({});
   // Min-stock for new item creation (map of locationId → value)
@@ -149,7 +158,16 @@ export function InventoryScreen() {
 
   // Restock — bulk batch
   type RestockMode = "purchase" | "adjust" | "transfer";
-  type BulkLine = { id: string; itemId: string; qty: string; locationId: string; locationType: "WAREHOUSE" | "OUTLET"; note: string };
+  type BulkLine = {
+    id: string; itemId: string; qty: string;
+    locationId: string; locationType: "WAREHOUSE" | "OUTLET"; note: string;
+    // purchase-only tier fields
+    unitCost?: string;
+    tierId?: string;
+    newTierLabel?: string;
+    newTierSellingPrice?: string;
+    newTierDiscountPrice?: string;
+  };
   const [restockMode, setRestockMode] = useState<RestockMode>("purchase");
   // Shared locations (purchase = warehouse dest; transfer = from location)
   const [sharedLocationId,   setSharedLocationId]   = useState("");
@@ -166,6 +184,15 @@ export function InventoryScreen() {
   const [addLocId,    setAddLocId]    = useState("");
   const [addLocType,  setAddLocType]  = useState<"WAREHOUSE" | "OUTLET">("WAREHOUSE");
   const [addNote,     setAddNote]     = useState("");
+  // Purchase-mode tier inputs
+  const [addUnitCost,            setAddUnitCost]            = useState("");
+  const [addTierMode,            setAddTierMode]            = useState<"none" | "existing" | "new">("none");
+  const [addExistingTierId,      setAddExistingTierId]      = useState("");
+  const [addNewTierLabel,        setAddNewTierLabel]        = useState("");
+  const [addNewTierSellingPrice, setAddNewTierSellingPrice] = useState("");
+  const [addNewTierDiscountPrice,setAddNewTierDiscountPrice]= useState("");
+  const [itemTiers,              setItemTiers]              = useState<import("@/lib/api").PriceTierRecord[]>([]);
+  const [loadingTiers,           setLoadingTiers]           = useState(false);
   const [restocking,  setRestocking]  = useState(false);
   let lineCounter = 0;
 
@@ -418,6 +445,16 @@ export function InventoryScreen() {
 
   const openEditItem = (item: ItemRecord) => {
     setEditingItemId(item.id);
+    setShowAllTiers(false);
+    setEditingTierId(null);
+    setShowNewTierForm(false);
+    setNewTierForm({ label: "", costPrice: "", sellingPrice: "", discountPrice: "", quantity: "", note: "" });
+    // Load tiers
+    setTiersLoading(true);
+    api.listPriceTiers(item.id, true)
+      .then((tiers) => setEditItemTiers(tiers))
+      .catch(() => setEditItemTiers([]))
+      .finally(() => setTiersLoading(false));
     setEditItemForm({
       sku: item.sku,
       name: item.name,
@@ -496,6 +533,15 @@ export function InventoryScreen() {
     const qty = parseInt(addQty, 10);
     if (!qty || qty <= 0) { setError("Enter a valid quantity."); return; }
     if (restockMode === "adjust" && !addLocId) { setError("Select a location for this item."); return; }
+    if (restockMode === "purchase" && addTierMode === "existing" && !addExistingTierId) {
+      setError("Select an existing tier."); return;
+    }
+    if (restockMode === "purchase" && addTierMode === "new" && !addNewTierLabel.trim()) {
+      setError("Enter a label for the new tier."); return;
+    }
+    if (restockMode === "purchase" && addTierMode === "new" && !addNewTierSellingPrice) {
+      setError("Enter a selling price for the new tier."); return;
+    }
     setError(null);
     setBulkLines((prev) => [
       ...prev,
@@ -506,9 +552,19 @@ export function InventoryScreen() {
         locationId: restockMode === "adjust" ? addLocId : sharedLocationId,
         locationType: restockMode === "adjust" ? addLocType : sharedLocationType,
         note: addNote,
+        ...(restockMode === "purchase" && addUnitCost ? { unitCost: addUnitCost } : {}),
+        ...(restockMode === "purchase" && addTierMode === "existing" ? { tierId: addExistingTierId } : {}),
+        ...(restockMode === "purchase" && addTierMode === "new" ? {
+          newTierLabel: addNewTierLabel,
+          newTierSellingPrice: addNewTierSellingPrice,
+          newTierDiscountPrice: addNewTierDiscountPrice || "0",
+        } : {}),
       },
     ]);
     setAddItemId(""); setAddItemSearch(""); setAddQty(""); setAddNote("");
+    setAddUnitCost(""); setAddTierMode("none"); setAddExistingTierId("");
+    setAddNewTierLabel(""); setAddNewTierSellingPrice(""); setAddNewTierDiscountPrice("");
+    setItemTiers([]);
   };
 
   const removeLine = (id: string) => setBulkLines((prev) => prev.filter((l) => l.id !== id));
@@ -529,7 +585,21 @@ export function InventoryScreen() {
         const qty = parseInt(line.qty, 10);
         try {
           if (restockMode === "purchase") {
-            await api.purchaseStock({ warehouseId: sharedLocationId, itemId: line.itemId, quantity: qty, note: line.note || undefined });
+            await api.purchaseStock({
+              warehouseId: sharedLocationId,
+              itemId: line.itemId,
+              quantity: qty,
+              note: line.note || undefined,
+              ...(line.unitCost ? { unitCost: parseFloat(line.unitCost) } : {}),
+              ...(line.tierId ? { tierId: line.tierId } : {}),
+              ...(line.newTierLabel ? {
+                newTier: {
+                  label: line.newTierLabel,
+                  sellingPrice: parseFloat(line.newTierSellingPrice ?? "0"),
+                  discountPrice: parseFloat(line.newTierDiscountPrice ?? "0"),
+                },
+              } : {}),
+            });
           } else if (restockMode === "adjust") {
             await api.adjustStock({ locationType: line.locationType, locationId: line.locationId, itemId: line.itemId, newQuantity: qty, note: line.note || undefined });
           } else {
@@ -1074,6 +1144,110 @@ export function InventoryScreen() {
                         </div>
                       );
                     })()}
+                    {/* Price Tiers */}
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Price Tiers</p>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setShowAllTiers((v) => !v)} className="text-xs text-muted hover:text-ink transition">
+                            {showAllTiers ? "Active only" : "Show all"}
+                          </button>
+                          <button type="button" onClick={() => { setShowNewTierForm(true); setEditingTierId(null); }} className="text-xs text-brand hover:underline">+ Add tier</button>
+                        </div>
+                      </div>
+                      {tiersLoading ? (
+                        <p className="text-xs text-muted">Loading…</p>
+                      ) : (
+                        <>
+                          {(() => {
+                            const displayTiers = showAllTiers ? editItemTiers : editItemTiers.filter((t) => t.isActive);
+                            if (displayTiers.length === 0) return <p className="text-xs text-muted">No {showAllTiers ? "" : "active "}price tiers.</p>;
+                            return (
+                              <div className="space-y-2">
+                                {displayTiers.map((tier) => (
+                                  <div key={tier.id} className={`rounded-lg border p-2 text-xs ${tier.isActive ? "border-line bg-white" : "border-dashed border-gray-300 bg-gray-50 opacity-60"}`}>
+                                    {editingTierId === tier.id ? (
+                                      <div className="space-y-1.5">
+                                        <input value={editTierForm.label} onChange={(e) => setEditTierForm((f) => ({ ...f, label: e.target.value }))} placeholder="Label" className="w-full rounded border border-line px-2 py-1 text-xs outline-none" />
+                                        <div className="flex gap-1.5">
+                                          <input type="number" value={editTierForm.sellingPrice} onChange={(e) => setEditTierForm((f) => ({ ...f, sellingPrice: e.target.value }))} placeholder="Selling price" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                                          <input type="number" value={editTierForm.discountPrice} onChange={(e) => setEditTierForm((f) => ({ ...f, discountPrice: e.target.value }))} placeholder="Discount price" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                                        </div>
+                                        <input value={editTierForm.note} onChange={(e) => setEditTierForm((f) => ({ ...f, note: e.target.value }))} placeholder="Note (optional)" className="w-full rounded border border-line px-2 py-1 text-xs outline-none" />
+                                        <div className="flex gap-1.5">
+                                          <button type="button" disabled={savingTier} onClick={async () => {
+                                            setSavingTier(true);
+                                            try {
+                                              await api.updatePriceTier(tier.id, { label: editTierForm.label, sellingPrice: Number(editTierForm.sellingPrice), discountPrice: Number(editTierForm.discountPrice), note: editTierForm.note || undefined });
+                                              const tiers = await api.listPriceTiers(editingItemId!, true);
+                                              setEditItemTiers(tiers);
+                                              setEditingTierId(null);
+                                            } catch (err) { setError(err instanceof Error ? err.message : "Failed to update tier"); }
+                                            finally { setSavingTier(false); }
+                                          }} className="flex-1 rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-50">{savingTier ? "Saving…" : "Save"}</button>
+                                          <button type="button" onClick={() => setEditingTierId(null)} className="flex-1 rounded border border-line px-2 py-1 text-xs">Cancel</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div>
+                                          <p className="font-semibold">{tier.label}</p>
+                                          <p className="text-muted">Rs.{Number(tier.sellingPrice).toFixed(2)} · {tier.quantity} in stock{!tier.isActive ? " · archived" : ""}</p>
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <button type="button" onClick={() => { setEditingTierId(tier.id); setEditTierForm({ label: tier.label, sellingPrice: String(tier.sellingPrice), discountPrice: String(tier.discountPrice), note: tier.note ?? "" }); }} className="rounded px-1.5 py-0.5 text-xs text-muted hover:text-ink transition">Edit</button>
+                                          {tier.isActive && (
+                                            <button type="button" onClick={async () => {
+                                              if (!confirm(`Archive tier "${tier.label}"?`)) return;
+                                              try {
+                                                await api.archivePriceTier(tier.id);
+                                                const tiers = await api.listPriceTiers(editingItemId!, true);
+                                                setEditItemTiers(tiers);
+                                              } catch (err) { setError(err instanceof Error ? err.message : "Failed to archive tier"); }
+                                            }} className="rounded px-1.5 py-0.5 text-xs text-rose-600 hover:bg-rose-50 transition">Archive</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                          {showNewTierForm && (
+                            <div className="mt-2 space-y-1.5 rounded-lg border border-brand/30 bg-brand/5 p-2">
+                              <p className="text-xs font-semibold text-brand">New Tier</p>
+                              <input value={newTierForm.label} onChange={(e) => setNewTierForm((f) => ({ ...f, label: e.target.value }))} placeholder="Label (e.g. Batch Jan 2026)" className="w-full rounded border border-line px-2 py-1 text-xs outline-none" />
+                              <div className="flex gap-1.5">
+                                <input type="number" value={newTierForm.costPrice} onChange={(e) => setNewTierForm((f) => ({ ...f, costPrice: e.target.value }))} placeholder="Cost price" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                                <input type="number" value={newTierForm.sellingPrice} onChange={(e) => setNewTierForm((f) => ({ ...f, sellingPrice: e.target.value }))} placeholder="Selling price" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                                <input type="number" value={newTierForm.discountPrice} onChange={(e) => setNewTierForm((f) => ({ ...f, discountPrice: e.target.value }))} placeholder="Discount price" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                              </div>
+                              <div className="flex gap-1.5">
+                                <input type="number" value={newTierForm.quantity} onChange={(e) => setNewTierForm((f) => ({ ...f, quantity: e.target.value }))} placeholder="Initial qty (0)" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                                <input value={newTierForm.note} onChange={(e) => setNewTierForm((f) => ({ ...f, note: e.target.value }))} placeholder="Note (optional)" className="flex-1 rounded border border-line px-2 py-1 text-xs outline-none" />
+                              </div>
+                              <div className="flex gap-1.5">
+                                <button type="button" disabled={savingTier} onClick={async () => {
+                                  if (!newTierForm.label.trim() || !newTierForm.sellingPrice) { setError("Label and selling price are required."); return; }
+                                  setSavingTier(true);
+                                  try {
+                                    await api.createPriceTier(editingItemId!, { label: newTierForm.label, costPrice: Number(newTierForm.costPrice) || 0, sellingPrice: Number(newTierForm.sellingPrice), discountPrice: Number(newTierForm.discountPrice) || 0, quantity: Number(newTierForm.quantity) || 0, note: newTierForm.note || undefined });
+                                    const tiers = await api.listPriceTiers(editingItemId!, true);
+                                    setEditItemTiers(tiers);
+                                    setShowNewTierForm(false);
+                                    setNewTierForm({ label: "", costPrice: "", sellingPrice: "", discountPrice: "", quantity: "", note: "" });
+                                  } catch (err) { setError(err instanceof Error ? err.message : "Failed to create tier"); }
+                                  finally { setSavingTier(false); }
+                                }} className="flex-1 rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-50">{savingTier ? "Saving…" : "Create tier"}</button>
+                                <button type="button" onClick={() => setShowNewTierForm(false)} className="flex-1 rounded border border-line px-2 py-1 text-xs">Cancel</button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
                     <button type="button" onClick={handleItemUpdate} disabled={savingEdit}
                       className="btn-primary w-full disabled:cursor-not-allowed disabled:bg-muted">
                       {savingEdit ? "Saving…" : "Save changes"}
@@ -1474,7 +1648,19 @@ export function InventoryScreen() {
                             <li key={it.id}>
                               <button
                                 type="button"
-                                onMouseDown={() => { setAddItemId(it.id); setAddItemSearch(`${it.name} (${it.sku})`); setAddItemOpen(false); }}
+                                onMouseDown={async () => {
+                                  setAddItemId(it.id); setAddItemSearch(`${it.name} (${it.sku})`); setAddItemOpen(false);
+                                  // Load existing tiers for purchase mode
+                                  if (restockMode === "purchase") {
+                                    setAddTierMode("none"); setAddExistingTierId(""); setItemTiers([]);
+                                    setLoadingTiers(true);
+                                    try {
+                                      const tiers = await api.listPriceTiers(it.id, true);
+                                      setItemTiers(tiers);
+                                    } catch { setItemTiers([]); }
+                                    finally { setLoadingTiers(false); }
+                                  }
+                                }}
                                 className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition hover:bg-surface ${
                                   addItemId === it.id ? "bg-brand/10 font-semibold text-brand" : "text-ink"
                                 }`}
@@ -1511,6 +1697,54 @@ export function InventoryScreen() {
                     <option value="">Select location…</option>
                     {allLocations.map((l) => <option key={l.id} value={l.id}>{l.type === "WAREHOUSE" ? "🏭" : "🏪"} {l.name}</option>)}
                   </select>
+                )}
+
+                {/* Price tier selection for purchase mode */}
+                {restockMode === "purchase" && addItemId && (
+                  <div className="space-y-2 rounded-xl border border-line bg-surface/50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cost &amp; Pricing</p>
+                    <input type="number" min="0" step="0.01" value={addUnitCost} onChange={(e) => setAddUnitCost(e.target.value)}
+                      placeholder="Unit cost (optional)"
+                      className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none" />
+                    {loadingTiers ? (
+                      <p className="text-xs text-muted">Loading tiers…</p>
+                    ) : (
+                      <>
+                        <select value={addTierMode} onChange={(e) => { setAddTierMode(e.target.value as "none" | "existing" | "new"); setAddExistingTierId(""); }}
+                          className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none">
+                          <option value="none">No tier (use item default price)</option>
+                          {itemTiers.length > 0 && <option value="existing">Add to existing tier</option>}
+                          <option value="new">Create new price tier</option>
+                        </select>
+                        {addTierMode === "existing" && itemTiers.length > 0 && (
+                          <select value={addExistingTierId} onChange={(e) => setAddExistingTierId(e.target.value)}
+                            className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none">
+                            <option value="">Select tier…</option>
+                            {itemTiers.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.label} — Rs.{Number(t.sellingPrice).toFixed(2)} ({t.quantity} in stock{!t.isActive ? ", archived" : ""})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {addTierMode === "new" && (
+                          <div className="space-y-2">
+                            <input type="text" value={addNewTierLabel} onChange={(e) => setAddNewTierLabel(e.target.value)}
+                              placeholder="Tier label (e.g. Batch Jan 2026)"
+                              className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none" />
+                            <div className="flex gap-2">
+                              <input type="number" min="0" step="0.01" value={addNewTierSellingPrice} onChange={(e) => setAddNewTierSellingPrice(e.target.value)}
+                                placeholder="Selling price"
+                                className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none" />
+                              <input type="number" min="0" step="0.01" value={addNewTierDiscountPrice} onChange={(e) => setAddNewTierDiscountPrice(e.target.value)}
+                                placeholder="Discount price"
+                                className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none" />
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
 
                 <div className="flex gap-2">

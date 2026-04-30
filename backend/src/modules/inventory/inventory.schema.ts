@@ -63,12 +63,47 @@ export const createOutletSchema = z.object({
 // ---------------------------------------------------------------------------
 // Stock operations
 // ---------------------------------------------------------------------------
+
+// Sub-schema for creating a new price tier inline during a purchase
+export const newTierSchema = z.object({
+  label: z.string().min(1).max(100),
+  sellingPrice: z.number().nonnegative(),
+  discountPrice: z.number().min(0).default(0),
+});
+
 export const purchaseStockSchema = z.object({
   warehouseId: z.string().uuid(),
   itemId: z.string().uuid(),
   quantity: z.number().int().positive(),
   note: z.string().max(500).optional(),
+  // Tier support: supply exactly one of tierId OR newTier (or neither for tier-less restock)
+  tierId: z.string().uuid().optional(),
+  newTier: newTierSchema.optional(),
+  // Cost price paid for this purchase batch (used to populate/compare tier cost)
+  unitCost: z.number().nonnegative().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Price Tier management
+// ---------------------------------------------------------------------------
+export const createPriceTierSchema = z.object({
+  label: z.string().min(1).max(100),
+  costPrice: z.number().nonnegative(),
+  sellingPrice: z.number().nonnegative(),
+  discountPrice: z.number().min(0).default(0),
+  quantity: z.number().int().nonnegative().default(0),
+  note: z.string().max(500).optional(),
+});
+
+export const updatePriceTierSchema = z.object({
+  label: z.string().min(1).max(100).optional(),
+  sellingPrice: z.number().nonnegative().optional(),
+  discountPrice: z.number().min(0).optional(),
+  note: z.string().max(500).optional(),
+});
+
+export const tierIdParamSchema = z.object({ tierId: z.string().uuid() });
+export const itemIdParamSchema  = z.object({ id: z.string().uuid() });
 
 export const transferStockSchema = z
   .object({
@@ -131,3 +166,5 @@ export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
 export type SetMinStockInput = z.infer<typeof setMinStockSchema>;
 export type ListMovementsInput = z.infer<typeof listMovementsSchema>;
 export type StockFilterInput = z.infer<typeof stockFilterSchema>;
+export type CreatePriceTierInput = z.infer<typeof createPriceTierSchema>;
+export type UpdatePriceTierInput = z.infer<typeof updatePriceTierSchema>;

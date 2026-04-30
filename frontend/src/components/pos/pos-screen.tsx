@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type OutletRecord, type StockRow, type SaleReceipt } from "@/lib/api";
+import { api, type OutletRecord, type StockRow, type SaleReceipt, type PriceTierRecord } from "@/lib/api";
 import { useBarcodeScanner } from "@/lib/use-barcode-scanner";
 import { CameraBarcodeScannerModal } from "./camera-barcode-scanner-modal";
 import { PaymentModal } from "./payment-modal";
@@ -22,6 +22,8 @@ type Product = {
 type CartLine = Product & {
   quantity: number;
   discount: number; // flat Rs. amount off the line total
+  tierId?: string;  // selected price tier (if any)
+  tierLabel?: string;
 };
 
 const asMoney = (value: number) => `Rs. ${value.toFixed(2)}`;
@@ -53,6 +55,9 @@ export function PosScreen() {
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [screenError, setScreenError] = useState<string | null>(null);
+  // Tier picker
+  const [tierPickerProduct, setTierPickerProduct] = useState<Product | null>(null);
+  const [tierPickerTiers, setTierPickerTiers]   = useState<PriceTierRecord[]>([]);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -122,16 +127,38 @@ export function PosScreen() {
   const itemsCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const hasStockError = cart.some((line) => line.quantity > line.stock);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, tierId?: string, tierLabel?: string, tierPrice?: number) => {
     setCart((current) => {
-      const existing = current.find((line) => line.id === product.id);
+      const lineKey = tierId ? `${product.id}::${tierId}` : product.id;
+      const existing = current.find((line) => (tierId ? line.tierId === tierId : !line.tierId) && line.id === product.id);
       if (existing) {
         return current.map((line) =>
-          line.id === product.id ? { ...line, quantity: line.quantity + 1 } : line,
+          (tierId ? line.tierId === tierId : !line.tierId) && line.id === product.id
+            ? { ...line, quantity: line.quantity + 1 }
+            : line,
         );
       }
-      return [...current, { ...product, quantity: 1, discount: 0 }];
+      const effectivePrice = tierPrice !== undefined ? tierPrice : product.price;
+      return [...current, { ...product, price: effectivePrice, quantity: 1, discount: 0, tierId, tierLabel }];
     });
+  };
+
+  const handleAddProduct = async (product: Product) => {
+    try {
+      const tiers = await api.listPriceTiers(product.itemId);
+      const activeTiersWithStock = tiers.filter((t) => t.isActive && t.quantity > 0);
+      if (activeTiersWithStock.length === 0) {
+        addToCart(product);
+      } else if (activeTiersWithStock.length === 1) {
+        const t = activeTiersWithStock[0];
+        addToCart(product, t.id, t.label, Number(t.sellingPrice));
+      } else {
+        setTierPickerProduct(product);
+        setTierPickerTiers(activeTiersWithStock);
+      }
+    } catch {
+      addToCart(product);
+    }
   };
 
   const setLineDiscount = (productId: string, value: string) => {
@@ -226,6 +253,7 @@ export function PosScreen() {
           quantity: line.quantity,
           unitPrice: line.price,
           discount: line.discount > 0 ? line.discount : undefined,
+          tierId: line.tierId,
         })),
         payments,
       });
@@ -315,7 +343,7 @@ export function PosScreen() {
               <button
                 key={product.id}
                 type="button"
-                onClick={() => { addToCart(product); setCartOpen(true); }}
+                onClick={() => { void handleAddProduct(product); setCartOpen(true); }}
                 className="rounded-[24px] border border-line bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-brand hover:shadow-lg active:scale-95"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -410,7 +438,7 @@ export function PosScreen() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold">{line.name}</p>
-                      <p className="mt-1 text-xs text-muted">{line.sku}</p>
+                      <p className="mt-1 text-xs text-muted">{line.sku}{line.tierLabel ? ` · ${line.tierLabel}` : ""}</p>
                     </div>
                     <div className="text-right">
                       {line.discount > 0 && (
@@ -569,6 +597,48 @@ export function PosScreen() {
         }}
         title="Scan item barcode"
       />
+
+      {/* Tier picker modal */}
+      {tierPickerProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTierPickerProduct(null)}>
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold">Select Price Tier</h2>
+            <p className="mt-1 text-sm text-muted">{tierPickerProduct.name}</p>
+            <div className="mt-4 space-y-2">
+              {tierPickerTiers.map((tier) => (
+                <button
+                  key={tier.id}
+                  type="button"
+                  onClick={() => {
+                    addToCart(tierPickerProduct, tier.id, tier.label, Number(tier.sellingPrice));
+                    setTierPickerProduct(null);
+                    setTierPickerTiers([]);
+                  }}
+                  className="flex w-full items-center justify-between rounded-2xl border border-line bg-surface px-4 py-3 text-left transition hover:border-brand hover:bg-brand/5"
+                >
+                  <div>
+                    <p className="font-medium">{tier.label}</p>
+                    <p className="text-xs text-muted">{tier.quantity} in stock</p>
+                  </div>
+                  <span className="font-mono text-sm font-semibold text-brand">Rs.{Number(tier.sellingPrice).toFixed(2)}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  addToCart(tierPickerProduct);
+                  setTierPickerProduct(null);
+                  setTierPickerTiers([]);
+                }}
+                className="w-full rounded-2xl border border-line px-4 py-3 text-sm text-muted transition hover:bg-surface"
+              >
+                Use default price (Rs.{tierPickerProduct.price.toFixed(2)})
+              </button>
+            </div>
+            <button type="button" onClick={() => setTierPickerProduct(null)} className="mt-4 w-full text-sm text-muted hover:text-ink">Cancel</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

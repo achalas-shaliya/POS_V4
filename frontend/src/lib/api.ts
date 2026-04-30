@@ -110,6 +110,22 @@ export type ItemRecord = {
   brand?: { id: string; name: string } | null;
 };
 
+export type PriceTierRecord = {
+  id: string;
+  label: string;
+  costPrice: number | string;
+  sellingPrice: number | string;
+  discountPrice: number | string;
+  quantity: number;
+  isActive: boolean;
+  note?: string | null;
+  itemId: string;
+  item?: { id: string; sku: string; name: string };
+  createdBy?: { id: string; fullName: string };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StockRow = {
   id: string;
   quantity: number;
@@ -652,7 +668,15 @@ export const api = {
   getOutletStock: (id: string, params?: { page?: number; limit?: number; search?: string; lowStockOnly?: boolean }) =>
     requestPaginated<StockRow>(`/inventory/outlets/${id}/stock`, { page: 1, limit: 100, ...params }),
 
-  purchaseStock: (payload: { warehouseId: string; itemId: string; quantity: number; note?: string }) =>
+  purchaseStock: (payload: {
+    warehouseId: string;
+    itemId: string;
+    quantity: number;
+    note?: string;
+    tierId?: string;
+    unitCost?: number;
+    newTier?: { label: string; sellingPrice: number; discountPrice?: number };
+  }) =>
     request<void>("/inventory/purchases", { method: "POST", body: JSON.stringify(payload) }),
   adjustStock: (payload: { locationType: "WAREHOUSE" | "OUTLET"; locationId: string; itemId: string; newQuantity: number; note?: string }) =>
     request<void>("/inventory/adjustments", { method: "POST", body: JSON.stringify(payload) }),
@@ -663,6 +687,18 @@ export const api = {
   listItems: (params?: { page?: number; limit?: number; search?: string; type?: string; isActive?: boolean }) =>
     requestPaginated<ItemRecord>("/inventory/items", { page: 1, limit: 100, ...params }),
 
+  // ---------------------------------------------------------------------------
+  // Price Tiers
+  // ---------------------------------------------------------------------------
+  listPriceTiers: (itemId: string, includeArchived?: boolean) =>
+    request<PriceTierRecord[]>(`/inventory/items/${itemId}/tiers${includeArchived ? "?includeArchived=true" : ""}`),
+  createPriceTier: (itemId: string, payload: { label: string; costPrice: number; sellingPrice: number; discountPrice?: number; quantity?: number; note?: string }) =>
+    request<PriceTierRecord>(`/inventory/items/${itemId}/tiers`, { method: "POST", body: JSON.stringify(payload) }),
+  updatePriceTier: (tierId: string, payload: { label?: string; sellingPrice?: number; discountPrice?: number; note?: string }) =>
+    request<PriceTierRecord>(`/inventory/tiers/${tierId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  archivePriceTier: (tierId: string) =>
+    request<PriceTierRecord>(`/inventory/tiers/${tierId}`, { method: "DELETE" }),
+
   listCustomers: (params?: { page?: number; limit?: number; search?: string }) =>
     requestPaginated<CustomerRecord>("/sales/customers", { page: 1, limit: 100, ...params }),
   createCustomer: (payload: { name: string; phone: string; email?: string }) =>
@@ -672,7 +708,7 @@ export const api = {
     customerId?: string;
     note?: string;
     discountAmt?: number;
-    items: { itemId: string; quantity: number; unitPrice?: number; discount?: number }[];
+    items: { itemId: string; quantity: number; unitPrice?: number; discount?: number; tierId?: string }[];
     payments: { method: "CASH" | "CARD"; amount: number; reference?: string }[];
   }) => request<SaleReceipt>("/sales/checkout", { method: "POST", body: JSON.stringify(payload) }),
   openCashDrawer: () => request<{ success: boolean; message: string }>("/cash-drawer/open", { method: "POST" }),

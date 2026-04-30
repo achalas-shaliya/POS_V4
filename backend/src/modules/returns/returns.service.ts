@@ -123,6 +123,17 @@ export const approveReturn = async (
     for (const line of saleReturn.items) {
       await invRepo.upsertOutletStock(tx, saleReturn.outletId, line.itemId, line.quantity);
 
+      // Restore tier quantity if the original sale line was tied to a tier
+      const tierId = line.saleItem?.tierId;
+      if (tierId) {
+        await invRepo.updateTierQuantity(tx, tierId, line.quantity);
+        // Re-activate the tier if it was auto-archived when it hit zero
+        await tx.itemPriceTier.update({
+          where: { id: tierId },
+          data: { isActive: true },
+        });
+      }
+
       await invRepo.createMovement(tx, {
         movementType: MovementType.RETURN,
         quantity:     line.quantity,

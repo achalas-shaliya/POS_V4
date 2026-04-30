@@ -13,6 +13,8 @@ import {
   transferStockSchema,
   adjustStockSchema,
   setMinStockSchema,
+  createPriceTierSchema,
+  updatePriceTierSchema,
 } from './inventory.schema';
 import * as ctrl from './inventory.controller';
 
@@ -88,5 +90,13 @@ router.patch(
 // Movement history
 // ---------------------------------------------------------------------------
 router.get('/movements', authorize('inventory:read'), ctrl.listMovements);
+
+// ---------------------------------------------------------------------------
+// Price Tiers (per item)
+// ---------------------------------------------------------------------------
+router.get('/items/:id/tiers', authorize('inventory:read'), ctrl.listPriceTiers);
+router.post('/items/:id/tiers', authorize('inventory:manage'), validateRequest({ body: createPriceTierSchema }), ctrl.createPriceTier);
+router.patch('/tiers/:tierId', authorize('inventory:manage'), validateRequest({ body: updatePriceTierSchema }), ctrl.updatePriceTier);
+router.delete('/tiers/:tierId', authorize('inventory:manage'), ctrl.archivePriceTier);
 
 export default router;

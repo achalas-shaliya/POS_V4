@@ -9,6 +9,8 @@ import {
   listItemsSchema,
   stockFilterSchema,
   listMovementsSchema,
+  createPriceTierSchema,
+  updatePriceTierSchema,
   type CreateItemInput,
   type UpdateItemInput,
   type CreateCategoryInput,
@@ -191,5 +193,40 @@ export const listMovements = async (req: Request, res: Response, next: NextFunct
     const input = listMovementsSchema.parse(req.query);
     const { data, total, page, limit } = await svc.listMovements(input);
     sendPaginated(res, data, { total, page, limit }, 'Movements retrieved');
+  } catch (err) { next(err); }
+};
+
+// ---------------------------------------------------------------------------
+// Price Tiers
+// ---------------------------------------------------------------------------
+
+export const listPriceTiers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const includeArchived = req.query.includeArchived === 'true';
+    const data = await svc.listPriceTiers(req.params.id as string, includeArchived);
+    sendSuccess(res, data, 'Price tiers retrieved');
+  } catch (err) { next(err); }
+};
+
+export const createPriceTier = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = createPriceTierSchema.parse(req.body);
+    const tier = await svc.createPriceTier(req.params.id as string, data, req.user!.id);
+    sendCreated(res, tier, 'Price tier created');
+  } catch (err) { next(err); }
+};
+
+export const updatePriceTier = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const data = updatePriceTierSchema.parse(req.body);
+    const tier = await svc.updatePriceTier(req.params.tierId as string, data);
+    sendSuccess(res, tier, 'Price tier updated');
+  } catch (err) { next(err); }
+};
+
+export const archivePriceTier = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const tier = await svc.archivePriceTier(req.params.tierId as string);
+    sendSuccess(res, tier, 'Price tier archived');
   } catch (err) { next(err); }
 };

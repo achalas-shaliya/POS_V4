@@ -25,7 +25,7 @@ const RETURN_DETAIL_INCLUDE = {
   items: {
     include: {
       item:     { select: { id: true, sku: true, name: true } },
-      saleItem: { select: { id: true, quantity: true, unitPrice: true } },
+      saleItem: { select: { id: true, quantity: true, unitPrice: true, tierId: true } },
     },
     orderBy: { item: { name: 'asc' as const } },
   },

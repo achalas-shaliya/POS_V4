@@ -44,6 +44,7 @@ model User {
   assignedRepairs       RepairJob[]          @relation("RepairTechnician")
   createdRepairs        RepairJob[]          @relation("RepairCreatedBy")
   repairStatusLogs      RepairStatusLog[]
+  createdPriceTiers     ItemPriceTier[]
   paymentTransactions   PaymentTransaction[]
   registersOpened       CashRegister[]       @relation("RegisterOpenedBy")
   registersClosed       CashRegister[]       @relation("RegisterClosedBy")
@@ -223,12 +224,42 @@ model Item {
   repairParts     RepairPart[]
   transferItems   StockTransferItem[]
   returnItems     SaleReturnItem[]
+  priceTiers      ItemPriceTier[]
 
   @@index([categoryId])
   @@index([brandId])
   @@index([sku])
   @@index([isActive, name])
   @@map("items")
+}
+
+// Price tiers per item — each tier represents a distinct cost/selling price batch.
+// POS selects a tier when multiple active tiers exist; tier quantity is decremented on sale.
+model ItemPriceTier {
+  id            String   @id @default(uuid()) @db.VarChar(36)
+  label         String   @db.VarChar(100)                        // e.g. "Old Stock", "New Stock"
+  costPrice     Decimal  @map("cost_price") @db.Decimal(12, 2)
+  sellingPrice  Decimal  @map("selling_price") @db.Decimal(12, 2)
+  discountPrice Decimal  @default(0) @map("discount_price") @db.Decimal(10, 2)
+  quantity      Int      @default(0)                              // remaining units in this tier
+  isActive      Boolean  @default(true) @map("is_active")        // false = archived (depleted)
+  note          String?  @db.VarChar(500)
+
+  itemId        String   @map("item_id") @db.VarChar(36)
+  item          Item     @relation(fields: [itemId], references: [id])
+
+  createdById   String   @map("created_by_id") @db.VarChar(36)
+  createdBy     User     @relation(fields: [createdById], references: [id])
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  saleItems     SaleItem[]
+
+  @@index([itemId])
+  @@index([isActive])
+  @@index([itemId, isActive])
+  @@map("item_price_tiers")
 }
 
 model WarehouseStock {
@@ -401,10 +432,15 @@ model SaleItem {
   itemId    String  @map("item_id") @db.VarChar(36)
   item      Item    @relation(fields: [itemId], references: [id])
 
+  // Which price tier was used (null for legacy sales created before tiers)
+  tierId    String?       @map("tier_id") @db.VarChar(36)
+  tier      ItemPriceTier? @relation(fields: [tierId], references: [id])
+
   returnItems SaleReturnItem[]
 
   @@index([saleId])
   @@index([itemId])
+  @@index([tierId])
   @@map("sale_items")
 }
 

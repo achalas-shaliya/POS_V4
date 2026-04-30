@@ -24,6 +24,8 @@ export const lineItemSchema = z.object({
   unitPrice: z.number().nonnegative().optional(),
   // Per-unit discount amount (default: 0)
   discount: z.number().nonnegative().default(0),
+  // Which price tier to use (optional — if omitted, falls back to item.sellingPrice)
+  tierId: z.string().uuid().optional(),
 });
 
 export const paymentInputSchema = z.object({

@@ -29,6 +29,7 @@ export function SalesHistoryScreen() {
   const [outletId, setOutletId] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const LIMIT = 30;
 
@@ -79,6 +80,17 @@ export function SalesHistoryScreen() {
 
   useEffect(() => { void loadSales(); }, [loadSales]);
 
+  // Filter sales by search term
+  const filteredSales = sales.filter((sale) => {
+    const searchLower = search.toLowerCase();
+    return (
+      sale.receiptNo.toLowerCase().includes(searchLower) ||
+      sale.customer?.name.toLowerCase().includes(searchLower) ||
+      sale.customer?.phone.toLowerCase().includes(searchLower) ||
+      sale.cashier?.fullName.toLowerCase().includes(searchLower)
+    );
+  });
+
   const openDetail = async (id: string) => {
     setSelectedId(id);
     setDetail(null);
@@ -110,7 +122,8 @@ export function SalesHistoryScreen() {
     }
   };
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.ceil(filteredSales.length / LIMIT);
+  const displaySales = filteredSales.slice((page - 1) * LIMIT, page * LIMIT);
   const canManage = session?.user?.permissions?.includes("sales:manage") ?? false;
 
   // ---------------------------------------------------------------------------
@@ -126,6 +139,13 @@ export function SalesHistoryScreen() {
             <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Point of Sale</p>
             <h2 className="mt-0.5 text-lg font-bold">Sales History</h2>
           </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by receipt #, customer name/phone, or cashier…"
+            className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none"
+          />
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <select
               value={outletId}
@@ -162,8 +182,10 @@ export function SalesHistoryScreen() {
         <div className="card flex min-h-0 flex-1 flex-col overflow-hidden p-0">
           {loading ? (
             <p className="p-6 text-sm text-muted">Loading sales…</p>
-          ) : sales.length === 0 ? (
-            <p className="p-6 text-sm text-muted">No sales found for the selected filters.</p>
+          ) : filteredSales.length === 0 ? (
+            <p className="p-6 text-sm text-muted">
+              {search ? "No sales match your search." : "No sales found for the selected filters."}
+            </p>
           ) : (
             <div className="flex-1 overflow-x-auto overflow-y-auto">
               <table className="w-full text-sm">
@@ -178,7 +200,7 @@ export function SalesHistoryScreen() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {sales.map((sale) => (
+                  {displaySales.map((sale) => (
                     <tr
                       key={sale.id}
                       onClick={() => openDetail(sale.id)}
@@ -201,7 +223,7 @@ export function SalesHistoryScreen() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-line px-4 py-3">
               <p className="text-xs text-muted">
-                Page {page} of {totalPages} · {total} sales
+                Page {page} of {totalPages} · {filteredSales.length} sales
               </p>
               <div className="flex gap-2">
                 <button
