@@ -97,14 +97,41 @@ export const listUsers = (skip: number, take: number, search?: string) =>
 // Refresh token repository
 // ---------------------------------------------------------------------------
 
+const ensureLegacyDeviceForUser = async (userId: string) => {
+  const publicDeviceId = `legacy-${userId}`;
+
+  const device = await prisma.device.upsert({
+    where: { deviceId: publicDeviceId },
+    update: {
+      isActive: true,
+      isAllowed: true,
+      lastSeenAt: new Date(),
+    },
+    create: {
+      deviceId: publicDeviceId,
+      label: 'Legacy Device',
+      platform: 'LEGACY',
+      isActive: true,
+      isAllowed: true,
+      createdById: userId,
+      lastSeenAt: new Date(),
+    },
+    select: { id: true },
+  });
+
+  return device.id;
+};
+
 export const createRefreshToken = (
   userId: string,
   token: string,
   expiresAt: Date,
 ) =>
-  prisma.refreshToken.create({
-    data: { userId, token, expiresAt },
-  });
+  ensureLegacyDeviceForUser(userId).then((deviceId) =>
+    prisma.refreshToken.create({
+      data: { userId, deviceId, token, expiresAt },
+    }),
+  );
 
 export const findRefreshToken = (token: string) =>
   prisma.refreshToken.findUnique({
@@ -127,6 +154,76 @@ export const revokeAllUserRefreshTokens = (userId: string) =>
 export const deleteExpiredRefreshTokens = () =>
   prisma.refreshToken.deleteMany({
     where: { expiresAt: { lt: new Date() } },
+  });
+
+// ---------------------------------------------------------------------------
+// Device repository
+// ---------------------------------------------------------------------------
+
+export const listDevices = (skip: number, take: number, search?: string) =>
+  prisma.$transaction([
+    prisma.device.findMany({
+      skip,
+      take,
+      where: search
+        ? {
+            OR: [
+              { deviceId: { contains: search } },
+              { label: { contains: search } },
+              { platform: { contains: search } },
+            ],
+          }
+        : undefined,
+      orderBy: [{ isAllowed: 'asc' }, { updatedAt: 'desc' }],
+    }),
+    prisma.device.count({
+      where: search
+        ? {
+            OR: [
+              { deviceId: { contains: search } },
+              { label: { contains: search } },
+              { platform: { contains: search } },
+            ],
+          }
+        : undefined,
+    }),
+  ]);
+
+export const createDevice = (data: {
+  deviceId: string;
+  label?: string;
+  platform?: string;
+  isAllowed?: boolean;
+  isActive?: boolean;
+  createdById?: string;
+}) =>
+  prisma.device.create({
+    data: {
+      deviceId: data.deviceId,
+      label: data.label,
+      platform: data.platform,
+      isAllowed: data.isAllowed ?? false,
+      isActive: data.isActive ?? true,
+      createdById: data.createdById,
+      lastSeenAt: new Date(),
+    },
+  });
+
+export const findDeviceById = (id: string) =>
+  prisma.device.findUnique({ where: { id } });
+
+export const updateDevice = (id: string, data: {
+  label?: string;
+  isAllowed?: boolean;
+  isActive?: boolean;
+}) =>
+  prisma.device.update({
+    where: { id },
+    data: {
+      ...(data.label !== undefined ? { label: data.label } : {}),
+      ...(data.isAllowed !== undefined ? { isAllowed: data.isAllowed } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+    },
   });
 
 // ---------------------------------------------------------------------------

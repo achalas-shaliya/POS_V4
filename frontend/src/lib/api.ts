@@ -38,6 +38,18 @@ export type AuthSession = {
   user: AuthUser;
 };
 
+export type DeviceRecord = {
+  id: string;
+  deviceId: string;
+  label?: string | null;
+  platform?: string | null;
+  isAllowed: boolean;
+  isActive: boolean;
+  lastSeenAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Permission = {
   id: string;
   name: string;
@@ -595,6 +607,20 @@ export const api = {
   clearSession,
 
   getMe: () => request<AuthUser>("/auth/me"),
+
+  listDevices: (params?: { page?: number; limit?: number; search?: string }) =>
+    requestPaginated<DeviceRecord>('/auth/devices', { page: 1, limit: 100, ...params }),
+
+  createDevice: (payload: {
+    deviceId: string;
+    label?: string;
+    platform?: string;
+    isAllowed?: boolean;
+    isActive?: boolean;
+  }) => request<DeviceRecord>('/auth/devices', { method: 'POST', body: JSON.stringify(payload) }),
+
+  updateDevice: (id: string, payload: { label?: string; isAllowed?: boolean; isActive?: boolean }) =>
+    request<DeviceRecord>(`/auth/devices/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
 
   listUsers: (params?: { page?: number; limit?: number; search?: string }) =>
     requestPaginated<UserRecord>("/auth/users", { page: 1, limit: 100, ...params }),

@@ -26,6 +26,15 @@ const app = express();
 
 const normalizeOrigin = (value: string) => value.trim().toLowerCase().replace(/\/$/, '');
 
+const isLocalDevOrigin = (origin: string): boolean => {
+  try {
+    const url = new URL(origin);
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+};
+
 const allowedOrigins = new Set(
   env.CORS_ORIGIN.split(',').map((o) => normalizeOrigin(o)).filter(Boolean),
 );
@@ -39,7 +48,11 @@ app.use(
   cors({
     origin: (origin, callback) => {
       // Allow non-browser clients (no Origin header) and explicitly whitelisted frontends.
-      if (!origin || allowedOrigins.has(normalizeOrigin(origin))) {
+      if (
+        !origin ||
+        allowedOrigins.has(normalizeOrigin(origin)) ||
+        (env.NODE_ENV === 'development' && isLocalDevOrigin(origin))
+      ) {
         callback(null, true);
         return;
       }
@@ -48,7 +61,12 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-device-id',
+      'x-device-fingerprint',
+    ],
   }),
 );
 

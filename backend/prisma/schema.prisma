@@ -38,6 +38,7 @@ model User {
   role         Role      @relation(fields: [roleId], references: [id])
 
   refreshTokens        RefreshToken[]
+  devices               Device[]
   stockMovements        StockMovement[]
   salesAsCashier        Sale[]               @relation("SaleCashier")
   voidedSales           Sale[]               @relation("SaleVoidedBy")
@@ -105,18 +106,45 @@ model RolePermission {
 
 // Refresh token store — allows explicit token revocation
 model RefreshToken {
-  id        String   @id @default(uuid()) @db.VarChar(36)
-  token     String   @unique @db.VarChar(512)
-  userId    String   @map("user_id") @db.VarChar(36)
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  token     String    @unique @db.VarChar(512)
+  userId    String    @map("user_id") @db.VarChar(36)
+  deviceId  String    @map("device_id") @db.VarChar(36)
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at")
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([deviceId])
   @@index([token])
   @@map("refresh_tokens")
+}
+
+// Registered devices — access control per device fingerprint
+model Device {
+  id              String    @id @default(uuid()) @db.VarChar(36)
+  deviceId        String    @unique @map("device_id") @db.VarChar(191)
+  label           String?   @db.VarChar(120)
+  platform        String?   @db.VarChar(40)
+  userAgent       String?   @map("user_agent") @db.VarChar(255)
+  fingerprintHash String?   @map("fingerprint_hash") @db.VarChar(191)
+  isAllowed       Boolean   @default(false) @map("is_allowed")
+  isActive        Boolean   @default(true) @map("is_active")
+  lastSeenAt      DateTime? @map("last_seen_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  createdById     String?   @map("created_by_id") @db.VarChar(36)
+  createdBy       User?     @relation(fields: [createdById], references: [id])
+
+  refreshTokens   RefreshToken[]
+
+  @@index([isAllowed, isActive])
+  @@index([createdById])
+  @@map("devices")
 }
 
 // =============================================================================

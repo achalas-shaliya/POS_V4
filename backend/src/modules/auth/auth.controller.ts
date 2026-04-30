@@ -11,6 +11,8 @@ import type {
   ChangePasswordInput,
   CreateRoleInput,
   AssignPermissionsInput,
+  CreateDeviceInput,
+  UpdateDeviceInput,
 } from './auth.schema';
 
 // ---------------------------------------------------------------------------
@@ -179,6 +181,51 @@ export const listPermissions = async (
   try {
     const permissions = await service.listPermissions();
     sendSuccess(res, permissions, 'Permissions retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Device management (admin)
+// ---------------------------------------------------------------------------
+
+export const listDevices = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const parsed = paginationSchema.parse(req.query);
+    const { skip, take, search } = getPaginationArgs(parsed);
+    const { data, total } = await service.listDevices(skip, take, search);
+    sendPaginated(res, data, { total, page: parsed.page, limit: parsed.limit }, 'Devices retrieved');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const createDevice = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const data = await service.createDevice(req.body as CreateDeviceInput, req.user!.id);
+    sendCreated(res, data, 'Device created');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateDevice = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const data = await service.updateDevice(req.params.id as string, req.body as UpdateDeviceInput);
+    sendSuccess(res, data, 'Device updated');
   } catch (err) {
     next(err);
   }

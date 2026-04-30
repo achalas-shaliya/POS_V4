@@ -76,6 +76,23 @@ export const assignPermissionsSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Device management
+// ---------------------------------------------------------------------------
+export const createDeviceSchema = z.object({
+  deviceId: z.string().min(3).max(191),
+  label: z.string().min(1).max(120).optional(),
+  platform: z.string().min(1).max(40).optional(),
+  isAllowed: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateDeviceSchema = z.object({
+  label: z.string().min(1).max(120).optional(),
+  isAllowed: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+// ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -85,3 +102,5 @@ export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
 export type AssignPermissionsInput = z.infer<typeof assignPermissionsSchema>;
+export type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
+export type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;

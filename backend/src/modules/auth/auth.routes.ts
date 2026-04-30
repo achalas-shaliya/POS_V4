@@ -10,6 +10,8 @@ import {
   changePasswordSchema,
   createRoleSchema,
   assignPermissionsSchema,
+  createDeviceSchema,
+  updateDeviceSchema,
 } from './auth.schema';
 import * as ctrl from './auth.controller';
 
@@ -75,6 +77,25 @@ router.get(
   authenticate,
   authorize('roles:read'),
   ctrl.listPermissions,
+);
+
+// ---------------------------------------------------------------------------
+// Admin — device management
+// ---------------------------------------------------------------------------
+router.get('/devices', authenticate, authorize('users:read'), ctrl.listDevices);
+router.post(
+  '/devices',
+  authenticate,
+  authorize('users:update'),
+  validateRequest({ body: createDeviceSchema }),
+  ctrl.createDevice,
+);
+router.patch(
+  '/devices/:id',
+  authenticate,
+  authorize('users:update'),
+  validateRequest({ body: updateDeviceSchema }),
+  ctrl.updateDevice,
 );
 
 export default router;

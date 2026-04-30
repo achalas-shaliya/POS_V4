@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { api, type OutletRecord, type Permission, type Role, type UserRecord } from "@/lib/api";
+import { api, type DeviceRecord, type OutletRecord, type Permission, type Role, type UserRecord } from "@/lib/api";
 
 type UserForm = {
   fullName: string;
@@ -55,17 +55,25 @@ export function AdminScreen() {
     address: "",
     phone: "",
   });
-  const [activeTab, setActiveTab] = useState<"users" | "outlets">("users");
+  const [devices, setDevices] = useState<DeviceRecord[]>([]);
+  const [deviceForm, setDeviceForm] = useState({
+    deviceId: "",
+    label: "",
+    platform: "",
+  });
+  const [activeTab, setActiveTab] = useState<"users" | "outlets" | "devices">("users");
 
   const loadAdminData = async () => {
-    const [usersResponse, rolesResponse, permissionsResponse, outletsResponse] = await Promise.all([
+    const [usersResponse, devicesResponse, rolesResponse, permissionsResponse, outletsResponse] = await Promise.all([
       api.listUsers({ page: 1, limit: 100 }),
+      api.listDevices({ page: 1, limit: 100 }),
       api.listRoles(),
       api.listPermissions(),
       api.listOutlets(),
     ]);
 
     setUsers(usersResponse.data);
+    setDevices(devicesResponse.data);
     setRoles(rolesResponse);
     setPermissions(permissionsResponse);
     setOutlets(outletsResponse);
@@ -178,6 +186,51 @@ export function AdminScreen() {
     }));
   };
 
+  const addDevice = () => {
+    if (!deviceForm.deviceId.trim()) return;
+    setError(null);
+    setMessage(null);
+    void api.createDevice({
+      deviceId: deviceForm.deviceId.trim(),
+      label: deviceForm.label.trim() || undefined,
+      platform: deviceForm.platform.trim() || undefined,
+      isAllowed: false,
+      isActive: true,
+    })
+      .then(async () => {
+        await loadAdminData();
+        setDeviceForm({ deviceId: "", label: "", platform: "" });
+        setMessage("Device created.");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to create device"));
+  };
+
+  const toggleDeviceApproval = (id: string) => {
+    const target = devices.find((d) => d.id === id);
+    if (!target) return;
+    setError(null);
+    setMessage(null);
+    void api.updateDevice(id, { isAllowed: !target.isAllowed })
+      .then(async () => {
+        await loadAdminData();
+        setMessage("Device approval status updated.");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to update device"));
+  };
+
+  const toggleDeviceActive = (id: string) => {
+    const target = devices.find((d) => d.id === id);
+    if (!target) return;
+    setError(null);
+    setMessage(null);
+    void api.updateDevice(id, { isActive: !target.isActive })
+      .then(async () => {
+        await loadAdminData();
+        setMessage("Device access state updated.");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to update device"));
+  };
+
   if (!session) {
     return (
       <div className="rounded-[28px] border border-line bg-white p-8">
@@ -202,6 +255,10 @@ export function AdminScreen() {
             <p className="text-xs text-muted">Outlets</p>
             <p className="mt-1 text-2xl font-bold">{outlets.length}</p>
           </div>
+          <div className="rounded-[24px] border border-line bg-white px-5 py-4">
+            <p className="text-xs text-muted">Devices</p>
+            <p className="mt-1 text-2xl font-bold">{devices.length}</p>
+          </div>
         </div>
         <div className="flex rounded-2xl border border-line bg-surface p-1 gap-1 self-end sm:self-auto shrink-0">
           <button
@@ -221,6 +278,15 @@ export function AdminScreen() {
             }`}
           >
             Outlet Management
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("devices")}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              activeTab === "devices" ? "bg-white shadow-sm text-ink" : "text-muted hover:text-ink"
+            }`}
+          >
+            Device Management
           </button>
         </div>
       </div>
@@ -468,6 +534,113 @@ export function AdminScreen() {
                 <div className="mt-4 text-sm text-muted">Phone: {outlet.phone ?? "Not set"}</div>
               </article>
             ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "devices" && (
+        <div className="space-y-5 xl:flex-1 xl:overflow-y-auto">
+          <div className="rounded-[28px] border border-line bg-white p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Manage devices</p>
+                <h3 className="mt-1 text-xl font-bold">Device directory</h3>
+              </div>
+              <span className="rounded-full bg-brand/10 px-3 py-1 text-sm font-semibold text-brand">
+                {devices.filter((d) => d.isAllowed && d.isActive).length} active approved
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+              <div className="rounded-[24px] border border-line bg-surface p-4">
+                <h4 className="font-semibold">Add device</h4>
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={deviceForm.deviceId}
+                    onChange={(event) => setDeviceForm((current) => ({ ...current, deviceId: event.target.value }))}
+                    placeholder="Device ID"
+                    className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none"
+                  />
+                  <input
+                    value={deviceForm.label}
+                    onChange={(event) => setDeviceForm((current) => ({ ...current, label: event.target.value }))}
+                    placeholder="Label (e.g. Counter PC 1)"
+                    className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none"
+                  />
+                  <input
+                    value={deviceForm.platform}
+                    onChange={(event) => setDeviceForm((current) => ({ ...current, platform: event.target.value }))}
+                    placeholder="Platform (Windows / Android)"
+                    className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none"
+                  />
+                  <button type="button" onClick={addDevice} className="btn-primary w-full">
+                    Add device
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-[24px] border border-line">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-line text-sm">
+                    <thead className="bg-surface text-left text-muted">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Device</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line bg-white">
+                      {devices.map((device) => (
+                        <tr key={device.id}>
+                          <td className="px-4 py-3">
+                            <div>
+                              <p className="font-semibold text-ink">{device.label}</p>
+                              <p className="mt-1 text-xs text-muted">{device.deviceId}</p>
+                              <p className="mt-1 text-xs text-muted">{device.platform || "Unknown"} · Last seen: {device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : "-"}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${device.isAllowed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                {device.isAllowed ? "APPROVED" : "PENDING"}
+                              </span>
+                              <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${device.isActive ? "bg-sky-100 text-sky-700" : "bg-rose-100 text-rose-700"}`}>
+                                {device.isActive ? "ACTIVE" : "BLOCKED"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleDeviceApproval(device.id)}
+                                className="rounded-xl border border-line px-3 py-2 text-xs font-semibold text-ink transition hover:border-brand hover:text-brand"
+                              >
+                                {device.isAllowed ? "Set Pending" : "Approve"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleDeviceActive(device.id)}
+                                className="rounded-xl border border-line px-3 py-2 text-xs font-semibold text-ink transition hover:border-brand hover:text-brand"
+                              >
+                                {device.isActive ? "Block" : "Activate"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {devices.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-6 text-center text-sm text-muted">
+                            No devices yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

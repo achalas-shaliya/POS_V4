@@ -16,6 +16,8 @@ import type {
   ChangePasswordInput,
   CreateRoleInput,
   AssignPermissionsInput,
+  CreateDeviceInput,
+  UpdateDeviceInput,
 } from "./auth.schema";
 
 // ---------------------------------------------------------------------------
@@ -245,6 +247,45 @@ export const assignPermissions = async (
 };
 
 export const listPermissions = () => repo.findAllPermissions();
+
+// ---------------------------------------------------------------------------
+// Device management service
+// ---------------------------------------------------------------------------
+
+export const listDevices = async (skip: number, take: number, search?: string) => {
+  const [data, total] = await repo.listDevices(skip, take, search);
+  return { data, total };
+};
+
+export const createDevice = async (input: CreateDeviceInput, userId: string) => {
+  const existing = await repo.findDeviceByPublicId(input.deviceId);
+  if (existing) throw conflict('Device already exists');
+
+  return repo.createDevice({
+    deviceId: input.deviceId,
+    label: input.label,
+    platform: input.platform,
+    isAllowed: input.isAllowed,
+    isActive: input.isActive,
+    createdById: userId,
+  });
+};
+
+export const updateDevice = async (id: string, input: UpdateDeviceInput) => {
+  const existing = await repo.findDeviceById(id);
+  if (!existing) throw notFound('Device');
+
+  const updated = await repo.updateDevice(id, input);
+
+  if (input.isAllowed === false || input.isActive === false) {
+    await prisma.refreshToken.updateMany({
+      where: { deviceId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  return updated;
+};
 
 // ---------------------------------------------------------------------------
 // Private helper — strip passwordHash from response
