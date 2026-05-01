@@ -60,6 +60,7 @@ export function AdminScreen() {
     deviceId: "",
     label: "",
     platform: "",
+    defaultOutletId: "",
   });
   const [activeTab, setActiveTab] = useState<"users" | "outlets" | "devices">("users");
 
@@ -194,15 +195,27 @@ export function AdminScreen() {
       deviceId: deviceForm.deviceId.trim(),
       label: deviceForm.label.trim() || undefined,
       platform: deviceForm.platform.trim() || undefined,
+      defaultOutletId: deviceForm.defaultOutletId || undefined,
       isAllowed: false,
       isActive: true,
     })
       .then(async () => {
         await loadAdminData();
-        setDeviceForm({ deviceId: "", label: "", platform: "" });
+        setDeviceForm({ deviceId: "", label: "", platform: "", defaultOutletId: "" });
         setMessage("Device created.");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to create device"));
+  };
+
+  const setDeviceDefaultOutlet = (id: string, defaultOutletId: string | null) => {
+    setError(null);
+    setMessage(null);
+    void api.updateDevice(id, { defaultOutletId })
+      .then(async () => {
+        await loadAdminData();
+        setMessage("Device default outlet updated.");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to update device outlet"));
   };
 
   const toggleDeviceApproval = (id: string) => {
@@ -573,6 +586,16 @@ export function AdminScreen() {
                     placeholder="Platform (Windows / Android)"
                     className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none"
                   />
+                  <select
+                    value={deviceForm.defaultOutletId}
+                    onChange={(event) => setDeviceForm((current) => ({ ...current, defaultOutletId: event.target.value }))}
+                    className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm outline-none"
+                  >
+                    <option value="">No default outlet</option>
+                    {outlets.map((outlet) => (
+                      <option key={outlet.id} value={outlet.id}>{outlet.name}</option>
+                    ))}
+                  </select>
                   <button type="button" onClick={addDevice} className="btn-primary w-full">
                     Add device
                   </button>
@@ -585,6 +608,7 @@ export function AdminScreen() {
                     <thead className="bg-surface text-left text-muted">
                       <tr>
                         <th className="px-4 py-3 font-medium">Device</th>
+                        <th className="px-4 py-3 font-medium">Default Outlet</th>
                         <th className="px-4 py-3 font-medium">Status</th>
                         <th className="px-4 py-3 font-medium">Action</th>
                       </tr>
@@ -598,6 +622,21 @@ export function AdminScreen() {
                               <p className="mt-1 text-xs text-muted">{device.deviceId}</p>
                               <p className="mt-1 text-xs text-muted">{device.platform || "Unknown"} · Last seen: {device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : "-"}</p>
                             </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={device.defaultOutletId ?? ""}
+                              onChange={(event) => setDeviceDefaultOutlet(device.id, event.target.value || null)}
+                              className="min-w-[180px] rounded-xl border border-line bg-white px-3 py-2 text-xs outline-none"
+                            >
+                              <option value="">No default outlet</option>
+                              {outlets.map((outlet) => (
+                                <option key={outlet.id} value={outlet.id}>{outlet.name}</option>
+                              ))}
+                            </select>
+                            <p className="mt-1 text-xs text-muted">
+                              Current: {device.defaultOutlet?.name ?? "Not assigned"}
+                            </p>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">
@@ -631,7 +670,7 @@ export function AdminScreen() {
                       ))}
                       {devices.length === 0 && (
                         <tr>
-                          <td colSpan={3} className="px-4 py-6 text-center text-sm text-muted">
+                          <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">
                             No devices yet.
                           </td>
                         </tr>

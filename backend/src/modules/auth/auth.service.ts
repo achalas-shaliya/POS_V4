@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env";
+import { prisma } from "../../config/database";
 import {
   AppError,
   notFound,
@@ -67,7 +68,6 @@ const extractPermissions = (
 
 export const login = async (input: LoginInput) => {
   const user = await repo.findUserWithPermissions(input.email);
-  console.log("Login attempt for email:", user);
 
   if (!user || !user.isActive) {
     throw new AppError("Invalid email or password", StatusCodes.UNAUTHORIZED);
@@ -80,6 +80,14 @@ export const login = async (input: LoginInput) => {
 
   const permissions = extractPermissions(user);
 
+  let device: Awaited<ReturnType<typeof repo.findDeviceByPublicId>> | null = null;
+  if (input.deviceId) {
+    const existingDevice = await repo.findDeviceByPublicId(input.deviceId);
+    if (existingDevice) {
+      device = await repo.touchDeviceByPublicId(input.deviceId);
+    }
+  }
+
   const accessToken = signAccess({
     sub: user.id,
     email: user.email,
@@ -88,7 +96,11 @@ export const login = async (input: LoginInput) => {
   });
   const refreshToken = signRefresh(user.id);
 
-  await repo.createRefreshToken(user.id, refreshToken, parseRefreshExpiry());
+  if (device) {
+    await repo.createRefreshTokenForDevice(user.id, device.id, refreshToken, parseRefreshExpiry());
+  } else {
+    await repo.createRefreshToken(user.id, refreshToken, parseRefreshExpiry());
+  }
 
   return {
     accessToken,
@@ -99,6 +111,10 @@ export const login = async (input: LoginInput) => {
       fullName: user.fullName,
       role: user.role.name,
       permissions,
+      defaultOutletId: device?.defaultOutlet?.id ?? null,
+      defaultOutlet: device?.defaultOutlet
+        ? { id: device.defaultOutlet.id, name: device.defaultOutlet.name }
+        : null,
     },
   };
 };
@@ -261,10 +277,16 @@ export const createDevice = async (input: CreateDeviceInput, userId: string) => 
   const existing = await repo.findDeviceByPublicId(input.deviceId);
   if (existing) throw conflict('Device already exists');
 
+  if (input.defaultOutletId) {
+    const outlet = await prisma.outlet.findUnique({ where: { id: input.defaultOutletId } });
+    if (!outlet) throw notFound('Outlet');
+  }
+
   return repo.createDevice({
     deviceId: input.deviceId,
     label: input.label,
     platform: input.platform,
+    defaultOutletId: input.defaultOutletId,
     isAllowed: input.isAllowed,
     isActive: input.isActive,
     createdById: userId,
@@ -274,6 +296,11 @@ export const createDevice = async (input: CreateDeviceInput, userId: string) => 
 export const updateDevice = async (id: string, input: UpdateDeviceInput) => {
   const existing = await repo.findDeviceById(id);
   if (!existing) throw notFound('Device');
+
+  if (input.defaultOutletId !== undefined && input.defaultOutletId !== null) {
+    const outlet = await prisma.outlet.findUnique({ where: { id: input.defaultOutletId } });
+    if (!outlet) throw notFound('Outlet');
+  }
 
   const updated = await repo.updateDevice(id, input);
 

@@ -6,6 +6,7 @@ import { z } from 'zod';
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  deviceId: z.string().min(3).max(191).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -82,12 +83,14 @@ export const createDeviceSchema = z.object({
   deviceId: z.string().min(3).max(191),
   label: z.string().min(1).max(120).optional(),
   platform: z.string().min(1).max(40).optional(),
+  defaultOutletId: z.string().uuid().optional(),
   isAllowed: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
 
 export const updateDeviceSchema = z.object({
   label: z.string().min(1).max(120).optional(),
+  defaultOutletId: z.string().uuid().nullable().optional(),
   isAllowed: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });

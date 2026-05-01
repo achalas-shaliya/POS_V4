@@ -84,8 +84,12 @@ export function PosScreen() {
 
       try {
         const data = await api.listOutlets();
-        setOutlets(data.filter((outlet) => outlet.isActive !== false));
-        setSelectedOutletId(data[0]?.id ?? "");
+        const activeOutlets = data.filter((outlet) => outlet.isActive !== false);
+        setOutlets(activeOutlets);
+
+        const preferredOutletId = session?.user.defaultOutletId;
+        const hasPreferredOutlet = !!preferredOutletId && activeOutlets.some((outlet) => outlet.id === preferredOutletId);
+        setSelectedOutletId(hasPreferredOutlet ? preferredOutletId! : (activeOutlets[0]?.id ?? ""));
       } catch (err) {
         setScreenError(err instanceof Error ? err.message : "Failed to load outlets");
       } finally {

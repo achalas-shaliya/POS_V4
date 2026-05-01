@@ -133,6 +133,16 @@ export const createRefreshToken = (
     }),
   );
 
+export const createRefreshTokenForDevice = (
+  userId: string,
+  deviceId: string,
+  token: string,
+  expiresAt: Date,
+) =>
+  prisma.refreshToken.create({
+    data: { userId, deviceId, token, expiresAt },
+  });
+
 export const findRefreshToken = (token: string) =>
   prisma.refreshToken.findUnique({
     where: { token },
@@ -174,6 +184,11 @@ export const listDevices = (skip: number, take: number, search?: string) =>
             ],
           }
         : undefined,
+      include: {
+        defaultOutlet: {
+          select: { id: true, name: true },
+        },
+      },
       orderBy: [{ isAllowed: 'asc' }, { updatedAt: 'desc' }],
     }),
     prisma.device.count({
@@ -193,6 +208,7 @@ export const createDevice = (data: {
   deviceId: string;
   label?: string;
   platform?: string;
+  defaultOutletId?: string;
   isAllowed?: boolean;
   isActive?: boolean;
   createdById?: string;
@@ -202,18 +218,53 @@ export const createDevice = (data: {
       deviceId: data.deviceId,
       label: data.label,
       platform: data.platform,
+      defaultOutletId: data.defaultOutletId,
       isAllowed: data.isAllowed ?? false,
       isActive: data.isActive ?? true,
       createdById: data.createdById,
       lastSeenAt: new Date(),
     },
+    include: {
+      defaultOutlet: {
+        select: { id: true, name: true },
+      },
+    },
   });
 
 export const findDeviceById = (id: string) =>
-  prisma.device.findUnique({ where: { id } });
+  prisma.device.findUnique({
+    where: { id },
+    include: {
+      defaultOutlet: {
+        select: { id: true, name: true },
+      },
+    },
+  });
+
+export const findDeviceByPublicId = (deviceId: string) =>
+  prisma.device.findUnique({
+    where: { deviceId },
+    include: {
+      defaultOutlet: {
+        select: { id: true, name: true },
+      },
+    },
+  });
+
+export const touchDeviceByPublicId = (deviceId: string) =>
+  prisma.device.update({
+    where: { deviceId },
+    data: { lastSeenAt: new Date() },
+    include: {
+      defaultOutlet: {
+        select: { id: true, name: true },
+      },
+    },
+  });
 
 export const updateDevice = (id: string, data: {
   label?: string;
+  defaultOutletId?: string | null;
   isAllowed?: boolean;
   isActive?: boolean;
 }) =>
@@ -221,8 +272,14 @@ export const updateDevice = (id: string, data: {
     where: { id },
     data: {
       ...(data.label !== undefined ? { label: data.label } : {}),
+      ...(data.defaultOutletId !== undefined ? { defaultOutletId: data.defaultOutletId } : {}),
       ...(data.isAllowed !== undefined ? { isAllowed: data.isAllowed } : {}),
       ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+    },
+    include: {
+      defaultOutlet: {
+        select: { id: true, name: true },
+      },
     },
   });
 

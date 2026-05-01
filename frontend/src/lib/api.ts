@@ -2,6 +2,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
 
 const SESSION_KEY = "pos.session";
+const DEVICE_KEY = "pos.device.id";
 
 // Called when a 401 cannot be recovered (refresh token also expired/missing).
 // Registered by AuthProvider so that the API layer can trigger a logout + redirect.
@@ -30,6 +31,8 @@ export type AuthUser = {
   role: string;
   permissions: string[];
   isActive?: boolean;
+  defaultOutletId?: string | null;
+  defaultOutlet?: { id: string; name: string } | null;
 };
 
 export type AuthSession = {
@@ -43,6 +46,8 @@ export type DeviceRecord = {
   deviceId: string;
   label?: string | null;
   platform?: string | null;
+  defaultOutletId?: string | null;
+  defaultOutlet?: { id: string; name: string } | null;
   isAllowed: boolean;
   isActive: boolean;
   lastSeenAt?: string | null;
@@ -436,6 +441,22 @@ export type CashRegister = {
 
 const isBrowser = () => typeof window !== "undefined";
 
+const generateDeviceId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+export const getOrCreateDeviceId = (): string => {
+  if (!isBrowser()) return "server-device";
+  const existing = window.localStorage.getItem(DEVICE_KEY);
+  if (existing) return existing;
+  const next = generateDeviceId();
+  window.localStorage.setItem(DEVICE_KEY, next);
+  return next;
+};
+
 export const getSession = (): AuthSession | null => {
   if (!isBrowser()) return null;
 
@@ -586,10 +607,11 @@ export const api = {
   baseUrl: API_BASE_URL,
 
   async login(email: string, password: string) {
+    const deviceId = getOrCreateDeviceId();
     const data = await request<AuthSession>("/auth/login", {
       method: "POST",
       auth: false,
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, deviceId }),
     });
     setSession(data);
     return data;
@@ -615,11 +637,12 @@ export const api = {
     deviceId: string;
     label?: string;
     platform?: string;
+    defaultOutletId?: string;
     isAllowed?: boolean;
     isActive?: boolean;
   }) => request<DeviceRecord>('/auth/devices', { method: 'POST', body: JSON.stringify(payload) }),
 
-  updateDevice: (id: string, payload: { label?: string; isAllowed?: boolean; isActive?: boolean }) =>
+  updateDevice: (id: string, payload: { label?: string; defaultOutletId?: string | null; isAllowed?: boolean; isActive?: boolean }) =>
     request<DeviceRecord>(`/auth/devices/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
 
   listUsers: (params?: { page?: number; limit?: number; search?: string }) =>

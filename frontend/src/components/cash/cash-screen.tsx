@@ -61,8 +61,14 @@ export function CashScreen() {
       ]);
       setOutlets(outletData);
       setRegisters(regData);
-      if (outletData[0] && !openForm.outletId)
-        setOpenForm((f) => ({ ...f, outletId: outletData[0].id }));
+      if (!openForm.outletId) {
+        const preferredOutletId = session?.user.defaultOutletId;
+        const selectedOutletId =
+          preferredOutletId && outletData.some((outlet) => outlet.id === preferredOutletId)
+            ? preferredOutletId
+            : (outletData[0]?.id ?? "");
+        setOpenForm((f) => ({ ...f, outletId: selectedOutletId }));
+      }
 
       // Try to load my open register
       try {

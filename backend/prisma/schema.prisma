@@ -139,11 +139,14 @@ model Device {
 
   createdById     String?   @map("created_by_id") @db.VarChar(36)
   createdBy       User?     @relation(fields: [createdById], references: [id])
+  defaultOutletId String?   @map("default_outlet_id") @db.VarChar(36)
+  defaultOutlet   Outlet?   @relation(fields: [defaultOutletId], references: [id])
 
   refreshTokens   RefreshToken[]
 
   @@index([isAllowed, isActive])
   @@index([createdById])
+  @@index([defaultOutletId])
   @@map("devices")
 }
 
@@ -165,6 +168,7 @@ model Outlet {
   repairJobs     RepairJob[]
   cashRegisters  CashRegister[]
   saleReturns    SaleReturn[]
+  devices        Device[]
 
   @@map("outlets")
 }
